@@ -7,6 +7,7 @@ export default function Home(){
         <h1>Companion Site Starter</h1>
         <p>This is your AI companion's home on the web. Try the hologram:</p>
         <p><Link href="/holo" style={{color:'#9fd1ff'}}>Open Holo</Link></p>
+        <p><Link href="/civic" style={{color:'#9fd1ff'}}>Civic Dashboard</Link></p>
         <p>API tools: <code>/api/tools/ping</code>, <code>/api/tools/status</code></p>
       </div>
     </main>
