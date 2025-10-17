@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DevLayout from "../../components/DevLayout";
 
 export default function DevLedger() {
   const [companion, setCompanion] = useState("jade");
@@ -22,8 +23,7 @@ export default function DevLedger() {
   }
 
   return (
-    <main style={{maxWidth: 820, margin: "40px auto", padding: "0 20px"}}>
-      <h1>Ledger Proof Verifier</h1>
+    <DevLayout>
       <p>Paste a <code>companion</code> id and the content <code>sha256</code> hash to query the Civic Ledger.</p>
 
       <section style={{display: "grid", gap: 12, marginTop: 16}}>
@@ -65,7 +65,7 @@ export default function DevLedger() {
         <summary>Need a hash? (local helper)</summary>
         <HashHelper onHash={(h)=>setSha(h)} />
       </details>
-    </main>
+    </DevLayout>
   );
 }
 

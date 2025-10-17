@@ -1,0 +1,32 @@
+{
+  "agents": [
+    {
+      "name": "incident-automation",
+      "interval": "30m",
+      "maxSteps": 12,
+      "timeoutSeconds": 180,
+      "abortOnPatterns": [
+        "I think the issue is with the parameter names",
+        "Let me check the function definition again",
+        "retrying the same action",
+        "diff is empty"
+      ],
+      "filesWriteAllowlist": [
+        ".github/workflows/*.yml",
+        "scripts/**/*.mjs",
+        "docs/ops/**",
+        "dev/*.json",
+        ".cursor/rules.json"
+      ],
+      "promptPreamble": "ALWAYS run the guard flow in docs/AGENTS.md before making changes."
+    }
+  ],
+  "contextRules": [
+    {
+      "name": "oaa-core-context",
+      "globs": ["docs/OAA_PREFACE.md", "pages/api/oaa/context.ts", "OAA_MEMORY.json"],
+      "reason": "Hydrate OAA identity, civics, and durable memory in every chat.",
+      "alwaysInclude": true
+    }
+  ]
+}
