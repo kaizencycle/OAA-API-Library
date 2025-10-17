@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "echo \"(no tests yet)\" && exit 0",
     "check:context": "node scripts/checkContext.mjs",
-    "sentinel:fix": "node --experimental-json-modules scripts/sentinelFix.mjs"
+    "sentinel:fix": "node --experimental-json-modules scripts/sentinelFix.mjs",
+    "sentinel:setup": "bash scripts/setup-sentinel-suite.sh",
+    "sentinel:test": "node scripts/test-sentinel-suite.mjs"
   },
   "dependencies": {
     "next": "14.2.5",
