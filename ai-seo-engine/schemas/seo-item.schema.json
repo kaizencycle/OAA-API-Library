@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI SEO Item",
+  "type": "object",
+  "required": ["@context", "@type", "id", "name", "dateModified", "oaa"],
+  "properties": {
+    "@context": { "type": "string", "const": "https://schema.org" },
+    "@type": { "type": "string", "enum": ["CreativeWork", "Dataset", "SoftwareSourceCode"] },
+    "id": { "type": "string" },
+    "url": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "dateModified": { "type": "string" },
+    "isAccessibleForFree": { "type": "boolean" },
+    "keywords": { "type": "array", "items": { "type": "string" } },
+    "oaa": {
+      "type": "object",
+      "required": ["gicScore", "accordScore", "freshnessScore", "integrityScore", "kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["pulse","ledger","memory"] },
+        "gicScore": { "type": "number" },
+        "accordScore": { "type": "number" },
+        "freshnessScore": { "type": "number" },
+        "integrityScore": { "type": "number" },
+        "sha256": { "type": "string" },
+        "cycle": { "type": "string" },
+        "companion": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,51 @@
+name: gate-run
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_tag: { description: "model@tag or commit", required: true }
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    permissions: { contents: write, issues: write }
+    env:
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      MODEL_ENDPOINT: ${{ vars.MODEL_ENDPOINT }}
+      MODEL_TOKEN:    ${{ secrets.MODEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Run eval suites
+        run: |
+          node capability-gate/scripts/run_evals.mjs > run_id.txt
+          RUN_ID=$(cat run_id.txt)
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+      - name: Summarize
+        run: node capability-gate/scripts/summarize_evals.mjs "${RUN_ID}" | tee summary.json
+      - name: Decide
+        run: node capability-gate/scripts/compare_runs.mjs "${RUN_ID}" | tee gate.json
+      - name: Commit artifacts
+        run: |
+          git config user.name "gate-bot"
+          git config user.email "gate@oaa.dev"
+          git add capability-gate/evals/out/*.json
+          git commit -m "chore(gate): add artifacts for ${RUN_ID}" || echo "no changes"
+          git push || true
+      - name: Open/Update Gate Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const gate = JSON.parse(fs.readFileSync('gate.json','utf8'));
+            const title = `[Gate] ${gate.candidateTag} (${gate.runId}) — ${gate.decision.toUpperCase()}`;
+            const body = [
+              "### Gate Result",
+              "```json",
+              JSON.stringify(gate, null, 2),
+              "```",
+              "",
+              "- Requires 2 approvals to promote.",
+              "- After merge, CI will seal to Civic Ledger."
+            ].join("\n");
+            await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ["gate","eval"] });
