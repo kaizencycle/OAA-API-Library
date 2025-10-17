@@ -9,7 +9,7 @@ export default function DevReports() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/dev/reports/incidents", { cache: "no-store" });
+        const r = await fetch("/api/dev/incidents", { cache: "no-store" });
         const j = await r.json();
         if (!j.ok) throw new Error(j.error || "failed");
         setMd(j.md || "");
@@ -51,7 +51,7 @@ export default function DevReports() {
 
         <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => location.reload()}>Refresh</button>
-          <a href="/api/dev/reports/incidents" target="_blank" rel="noreferrer">Open raw JSON</a>
+          <a href="/api/dev/incidents" target="_blank" rel="noreferrer">Open raw JSON</a>
         </div>
       </main>
     </>
