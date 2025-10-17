@@ -1,0 +1,23 @@
+name: watchdog
+on:
+  push:
+    paths:
+      - ".github/workflows/*.yml"
+      - ".cursor/rules.json"
+  workflow_dispatch: {}
+
+jobs:
+  detect-churn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect repeated self-edits
+        run: |
+          # Count last 12 commit subjects touching workflows/rules
+          LOG=$(git log --pretty=%s -n 12 -- .github/workflows .cursor/rules.json || true)
+          echo "$LOG"
+          CHURN=$(echo "$LOG" | grep -Ei 'fix|try|again|update|adjust|tweak' | wc -l | tr -d ' ')
+          if [ "$CHURN" -ge 6 ]; then
+            echo "Excessive config churn detected ($CHURN). Failing to prevent loops."
+            exit 1
+          fi
