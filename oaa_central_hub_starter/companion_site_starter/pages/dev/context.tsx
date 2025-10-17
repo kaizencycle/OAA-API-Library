@@ -1,6 +1,7 @@
 import { useOaaContext } from "../../lib/context/useOaaContext";
 import DevLayout from "../../components/DevLayout";
 import MemoryManager from "../../components/MemoryManager";
+import AgentStatusBanner from "../../components/AgentStatusBanner";
 
 export default function DevContext() {
   const ctx = useOaaContext();
@@ -24,6 +25,8 @@ export default function DevContext() {
   return (
     <DevLayout>
       <p>Canonical context data for the OAA system.</p>
+      
+      <AgentStatusBanner />
       
       <div style={{ marginTop: 20 }}>
         <h2>Raw Context Data</h2>
