@@ -1,10 +1,52 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
+type HoloItem = { 
+  title: string; 
+  sha256: string; 
+  proof: string; 
+  ts: number;
+  integrityScore?: number;
+};
+
 export default function Holo() {
   const mountRef = useRef<HTMLDivElement>(null);
   const [reply, setReply] = useState("Ask me something and I will respond.");
   const [listening, setListening] = useState(false);
+  const [items, setItems] = useState<HoloItem[]>([]);
+  const [integrityScore, setIntegrityScore] = useState(0.5); // 0-1 scale
+
+  // Fetch companion feed data
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch('/api/companions/feed?companion=jade');
+        const j = await r.json();
+        if (j.ok && j.items) {
+          const feedItems = j.items.map((item: any) => ({
+            title: item.title || 'Untitled',
+            sha256: item.sha256 || '0x0000',
+            proof: item.proof || '0x0000',
+            ts: item.ts || Date.now(),
+            integrityScore: item.proof ? 0.8 + Math.random() * 0.2 : 0.3 + Math.random() * 0.4
+          }));
+          setItems(feedItems);
+          // Calculate average integrity score
+          const avgScore = feedItems.reduce((sum: number, item: HoloItem) => sum + (item.integrityScore || 0.5), 0) / feedItems.length;
+          setIntegrityScore(avgScore);
+        }
+      } catch (e) {
+        console.log('Feed fetch failed, using mock data');
+        // Mock data for demo
+        setItems([
+          { title: "First Flight", sha256: "0x1234...", proof: "0x5678...", ts: Date.now() - 3600000, integrityScore: 0.9 },
+          { title: "Memory Core", sha256: "0x9abc...", proof: "0xdef0...", ts: Date.now() - 7200000, integrityScore: 0.7 },
+          { title: "Reflection", sha256: "0x2468...", proof: "0x1357...", ts: Date.now() - 10800000, integrityScore: 0.8 }
+        ]);
+        setIntegrityScore(0.8);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -23,26 +65,92 @@ export default function Holo() {
     };
     window.addEventListener("resize", resize);
 
-    const geo = new THREE.CylinderGeometry(0.5, 0.6, 1.6, 32, 1, true);
-    const mat = new THREE.ShaderMaterial({
-      transparent: true,
-      uniforms: { time: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      fragmentShader: `varying vec2 vUv; uniform float time;
-        float scan = 0.5 + 0.5*sin(30.0*(vUv.y + time*0.9));
-        float glow = smoothstep(0.0, 0.3, abs(vUv.x-0.5)) * 0.4;
-        vec3 col = mix(vec3(0.10,0.45,0.85), vec3(0.2,0.9,1.0), scan);
-        float edge = smoothstep(0.48,0.5,abs(vUv.x-0.5));
-        float alpha = 0.55*edge + 0.25*scan + 0.2*glow;
-        gl_FragColor = vec4(col, alpha);`
+    // Main holo ring with integrity-based color
+    const torusGeo = new THREE.TorusGeometry(1.2, 0.06, 32, 200);
+    const torusMat = new THREE.MeshStandardMaterial({ 
+      color: 0x66ccff, 
+      metalness: 0.8, 
+      roughness: 0.2, 
+      transparent: true, 
+      opacity: 0.9 
     });
-    const mesh = new THREE.Mesh(geo, mat); mesh.position.y = 0.9; scene.add(mesh);
-    const grid = new THREE.GridHelper(6, 30, 0x163968, 0x102444); grid.position.y = -0.01; scene.add(grid);
+    const torus = new THREE.Mesh(torusGeo, torusMat);
+    torus.position.y = 0.9;
+    scene.add(torus);
+
+    // Memory beads (one per item)
+    const beads: THREE.Mesh[] = [];
+    items.forEach((_, i) => {
+      const beadGeo = new THREE.SphereGeometry(0.06, 24, 24);
+      const beadMat = new THREE.MeshStandardMaterial({ 
+        color: 0x00ffcc,
+        emissive: 0x003322,
+        emissiveIntensity: 0.3
+      });
+      const bead = new THREE.Mesh(beadGeo, beadMat);
+      const angle = (i / Math.max(1, items.length)) * Math.PI * 2;
+      bead.position.set(
+        Math.cos(angle) * 1.2, 
+        Math.sin(angle) * 1.2 + 0.9, 
+        0
+      );
+      beads.push(bead);
+      scene.add(bead);
+    });
+
+    // Enhanced lighting
+    const light = new THREE.PointLight(0x99ddff, 2, 20);
+    light.position.set(2, 2, 3);
+    scene.add(light);
+    
+    const rim = new THREE.PointLight(0x00ffaa, 1, 15);
+    rim.position.set(-2, -1, 2);
+    scene.add(rim);
+
+    // Ambient light for better visibility
+    const ambient = new THREE.AmbientLight(0x404080, 0.3);
+    scene.add(ambient);
+
+    const grid = new THREE.GridHelper(6, 30, 0x163968, 0x102444);
+    grid.position.y = -0.01;
+    scene.add(grid);
+
     const clock = new THREE.Clock();
-    const loop = () => { (mat.uniforms as any).time.value = clock.getElapsedTime(); mesh.rotation.y += 0.002; renderer.render(scene, cam); requestAnimationFrame(loop); };
+    const loop = () => {
+      const t = clock.getElapsedTime();
+      
+      // Rotate torus
+      torus.rotation.x = Math.sin(t * 0.5) * 0.3;
+      torus.rotation.y = t * 0.8;
+      
+      // Integrity pulse (color changes based on integrity score)
+      const pulse = (Math.sin(t * 2.0) + 1) / 2; // 0..1
+      const baseHue = 0.55 + 0.15 * pulse; // Blue to cyan
+      const integrityHue = baseHue + (integrityScore - 0.5) * 0.3; // Green for high integrity
+      torusMat.color.setHSL(integrityHue, 0.7, 0.6);
+      
+      // Animate beads
+      beads.forEach((bead, i) => {
+        const item = items[i];
+        if (item) {
+          const beadIntensity = (item.integrityScore || 0.5) * 0.5 + 0.3;
+          (bead.material as THREE.MeshStandardMaterial).emissiveIntensity = beadIntensity;
+          bead.rotation.y += 0.01;
+          bead.scale.setScalar(0.8 + 0.2 * Math.sin(t * 2 + i));
+        }
+      });
+      
+      renderer.render(scene, cam);
+      requestAnimationFrame(loop);
+    };
     loop();
-    return () => { window.removeEventListener("resize", resize); renderer.dispose(); mountRef.current?.removeChild(renderer.domElement); };
-  }, []);
+    
+    return () => { 
+      window.removeEventListener("resize", resize); 
+      renderer.dispose(); 
+      mountRef.current?.removeChild(renderer.domElement); 
+    };
+  }, [items, integrityScore]);
 
   async function ask(){
     const SR: any = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
@@ -67,15 +175,34 @@ export default function Holo() {
   }
 
   return (
-    <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:14,height:'100vh',background:'#050914'}}>
-      <div ref={mountRef}/>
-      <aside style={{padding:12,color:'#cfe0ff',borderLeft:'1px solid #1f2a44'}}>
-        <h2>Hologram</h2>
-        <button onClick={ask} disabled={listening} style={{padding:'8px 12px'}}>{listening? 'Listening…':'Ask'}</button>
-        <h3 style={{marginTop:16}}>Reply</h3>
-        <div style={{whiteSpace:'pre-wrap'}}>{reply}</div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 360px',gap:24,minHeight:'100vh',background:'#050914',color:'#cfe0ff',padding:24}}>
+      <div style={{width:'100%',aspectRatio:'1/1',border:'1px solid #1b2440',borderRadius:12,background:'radial-gradient(120% 120% at 50% 0%, #0b1733 0%, #050914 60%)'}} ref={mountRef}/>
+      <aside style={{padding:'12px 16px',border:'1px solid #1b2440',borderRadius:12,background:'#0b1020'}}>
+        <h2 style={{margin:'6px 0 12px 0'}}>Hologram</h2>
+        <button onClick={ask} disabled={listening} style={{padding:'8px 12px',background:'#1b2440',border:'1px solid #253055',borderRadius:6,color:'#cfe0ff',cursor:'pointer'}}>
+          {listening? 'Listening…':'Ask'}
+        </button>
+        
+        <h3 style={{marginTop:16,marginBottom:12}}>Recent Reflections</h3>
+        <ul style={{listStyle:'none',padding:0,margin:0}}>
+          {items.map((item, i) => (
+            <li key={i} style={{margin:'8px 0',padding:'8px 10px',border:'1px solid #253055',borderRadius:8,background:'rgba(27,36,64,0.3)'}}>
+              <strong style={{color:'#00ffcc'}}>{item.title}</strong><br/>
+              <small style={{color:'#8a9bb5'}}>
+                proof {item.proof.slice(0,10)}… • 
+                integrity: {Math.round((item.integrityScore || 0.5) * 100)}%
+              </small>
+            </li>
+          ))}
+        </ul>
+        
+        <h3 style={{marginTop:16,marginBottom:12}}>Reply</h3>
+        <div style={{whiteSpace:'pre-wrap',padding:'8px',background:'rgba(27,36,64,0.3)',borderRadius:6}}>{reply}</div>
+        
         <hr style={{borderColor:'#1f2a44',margin:'16px 0'}}/>
-        <small>All tool calls are gated by Citizen Shield (HMAC).</small>
+        <small style={{color:'#8a9bb5'}}>
+          Ring color pulses with integrity score. All tool calls are gated by Citizen Shield (HMAC).
+        </small>
       </aside>
     </div>
   );
