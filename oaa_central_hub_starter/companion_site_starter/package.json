@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0 || true",
-    "test": "echo \"(no tests yet)\" && exit 0"
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"(no tests yet)\" && exit 0",
+    "check:context": "node scripts/checkContext.mjs",
+    "sentinel:fix": "node --experimental-json-modules scripts/sentinelFix.mjs"
   },
   "dependencies": {
     "next": "14.2.5",
@@ -25,6 +28,7 @@
     "@types/react-dom": "18.2.21",
     "eslint": "8.57.0",
     "typescript": "5.4.5",
-    "esbuild-register": "^3.5.0"
+    "esbuild-register": "^3.5.0",
+    "prettier": "^3.0.0"
   }
 }
