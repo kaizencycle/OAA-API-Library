@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Head from "next/head";
+import DevLayout from "../../components/DevLayout";
 
 type QueueStats = {
   ok: boolean;
@@ -82,31 +83,14 @@ export default function QueueAdmin() {
         <title>Queue Admin - OAA Hub</title>
       </Head>
       
-      <div style={{ 
-        minHeight: "100vh", 
-        background: "linear-gradient(135deg, #0b1020 0%, #1a1f3a 100%)",
-        color: "#cfe0ff",
-        padding: "2rem"
-      }}>
-        <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-          <h1 style={{ 
-            fontSize: "2.5rem", 
-            fontWeight: "bold", 
-            marginBottom: "1rem",
-            background: "linear-gradient(45deg, #1ecb6b, #9fd1ff)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent"
-          }}>
-            Queue Admin Console
-          </h1>
-          
-          <p style={{ 
-            opacity: 0.8, 
-            marginBottom: "2rem",
-            fontSize: "1.1rem"
-          }}>
-            Monitor and control the BullMQ publish queue. Requires admin token for write operations.
-          </p>
+      <DevLayout>
+        <p style={{ 
+          opacity: 0.8, 
+          marginBottom: "2rem",
+          fontSize: "1.1rem"
+        }}>
+          Monitor and control the BullMQ publish queue. Requires admin token for write operations.
+        </p>
 
           {/* Admin Token Input */}
           <div style={{ 
@@ -349,8 +333,7 @@ export default function QueueAdmin() {
               • <strong>Drain:</strong> Removes all waiting jobs (destructive)
             </div>
           </div>
-        </div>
-      </div>
+      </DevLayout>
     </>
   );
 }
