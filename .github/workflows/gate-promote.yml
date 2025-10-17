@@ -1,0 +1,43 @@
+name: gate-promote
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: { description: "gate run id (from gate-run)", required: true }
+      approve: { description: "I acknowledge 2-man rule", required: true, type: boolean }
+
+jobs:
+  promote:
+    if: ${{ inputs.approve == true }}
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      LEDGER_BASE_URL: ${{ vars.LEDGER_BASE_URL }}
+      LEDGER_ADMIN_TOKEN: ${{ secrets.LEDGER_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Read gate result
+        id: read
+        run: |
+          FILE="capability-gate/evals/out/${RUN_ID}.gate.json"
+          if [ ! -f "$FILE" ]; then echo "Gate file not found"; exit 1; fi
+          cat "$FILE"
+      - name: Seal to Civic Ledger
+        run: |
+          SHA=$(jq -r '.runId' capability-gate/evals/out/${RUN_ID}.gate.json)
+          BODY=$(jq -c '.' capability-gate/evals/out/${RUN_ID}.gate.json)
+          curl -s -X POST "$LEDGER_BASE_URL/seal" \
+            -H "authorization: Bearer $LEDGER_ADMIN_TOKEN" \
+            -H "content-type: application/json" \
+            -d "{\"title\":\"Capability Gate ${RUN_ID}\",\"slug\":\"gate-${RUN_ID}\",\"sha256\":\"${SHA}\"}" | tee seal.json
+      - name: Stage rollout (plan only)
+        run: node capability-gate/scripts/stage_rollout.mjs "${RUN_ID}" | tee rollout.json
+      - name: Commit promotion metadata
+        run: |
+          git config user.name "gate-bot"
+          git config user.email "gate@oaa.dev"
+          git add capability-gate/evals/out/${RUN_ID}.gate.json seal.json rollout.json
+          git commit -m "chore(gate): sealed & staged ${RUN_ID}" || echo "no changes"
+          git push || true

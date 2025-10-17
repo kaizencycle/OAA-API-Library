@@ -1,0 +1,33 @@
+name: ai-seo-sync
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+  workflow_dispatch: {}
+
+jobs:
+  build-seo-index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      HUB_BASE_URL: ${{ vars.HUB_BASE_URL }}  # e.g., https://oaa-hub.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Run pipeline
+        run: |
+          node ai-seo-engine/src/crawler.mjs
+          node ai-seo-engine/src/ranker.mjs
+          node ai-seo-engine/src/publisher.mjs
+      - name: Commit JSON-LD
+        run: |
+          if [[ -n "$(git status --porcelain public/ai-seo/index.jsonld 2>/dev/null)" ]]; then
+            git config user.name "ai-seo-bot"
+            git config user.email "seo@oaa.dev"
+            git add public/ai-seo/index.jsonld ai-seo-engine/out/*.json
+            git commit -m "chore(ai-seo): refresh integrity feed"
+            git push
+          else
+            echo "No changes."
+          fi
