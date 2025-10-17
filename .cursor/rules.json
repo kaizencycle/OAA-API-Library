@@ -1,0 +1,10 @@
+{
+  "contextRules": [
+    {
+      "name": "oaa-core-context",
+      "globs": ["docs/OAA_PREFACE.md", "pages/api/oaa/context.ts", "OAA_MEMORY.json"],
+      "reason": "Hydrate OAA identity, civics, and durable memory in every chat.",
+      "alwaysInclude": true
+    }
+  ]
+}
