@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AI SEO Item",
   "type": "object",
   "required": ["@context", "@type", "id", "name", "dateModified", "oaa"],
@@ -15,11 +15,11 @@
     "keywords": { "type": "array", "items": { "type": "string" } },
     "oaa": {
       "type": "object",
-      "required": ["gicScore", "accordScore", "freshnessScore", "integrityScore", "kind"],
+      "required": ["gicScore", "accordsScore", "freshnessScore", "integrityScore", "kind"],
       "properties": {
-        "kind": { "type": "string", "enum": ["pulse","ledger","memory"] },
+        "kind": { "type": "string", "enum": ["pulse","ledger","memory","page"] },
         "gicScore": { "type": "number" },
-        "accordScore": { "type": "number" },
+        "accordsScore": { "type": "number" },
         "freshnessScore": { "type": "number" },
         "integrityScore": { "type": "number" },
         "sha256": { "type": "string" },

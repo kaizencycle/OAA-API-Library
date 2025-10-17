@@ -1,10 +1,10 @@
 {
   "sources": {
-    "pulses": "/api/dev/sentinel/vitals",       // health/vitals feed
-    "ledgerRecent": "/api/dev/ledger/recent",   // your existing or stubbed route
-    "memory": "/api/oaa/memory"                 // durable notes (Eve, etc.)
+    "pulses": "/api/dev/sentinel/vitals",
+    "ledgerRecent": "/api/dev/ledger/recent",
+    "memory": "/api/oaa/memory"
   },
-  "baseUrlVar": "HUB_BASE_URL",                 // e.g., https://oaa-hub.onrender.com
+  "baseUrlVar": "HUB_BASE_URL",
   "minIntegrity": 0.4,
   "maxItemsPerType": 200,
   "weights": {
@@ -13,6 +13,7 @@
     "freshness": 0.1
   },
   "publish": {
-    "outputPath": "public/ai-seo/index.jsonld"
+    "outputPath": "public/ai-seo/index.jsonld",
+    "beaconsDir": "public/ai-seo/beacons"
   }
 }

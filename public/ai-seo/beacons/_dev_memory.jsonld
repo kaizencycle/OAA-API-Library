@@ -1,0 +1,23 @@
+{
+  "@context": "https://schema.org",
+  "@type": "CreativeWork",
+  "id": "/dev/memory",
+  "url": "/dev/memory",
+  "name": "OAA Memory",
+  "description": "Durable notes and daily cycle digests (Eve).",
+  "dateModified": "2024-10-17T22:00:00Z",
+  "isAccessibleForFree": true,
+  "keywords": [
+    "Memory",
+    "Eve",
+    "Cycles"
+  ],
+  "oaa": {
+    "kind": "memory",
+    "gicScore": 0.78,
+    "accordsScore": 0.85,
+    "freshnessScore": 0.95,
+    "integrityScore": 0.86,
+    "companion": "eve"
+  }
+}

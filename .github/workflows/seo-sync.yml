@@ -20,13 +20,19 @@ jobs:
           node ai-seo-engine/src/crawler.mjs
           node ai-seo-engine/src/ranker.mjs
           node ai-seo-engine/src/publisher.mjs
-      - name: Commit JSON-LD
+      - name: Build per-item beacons
+        run: node ai-seo-engine/src/beacons.mjs
+      - name: Validate JSON-LD beacons
         run: |
-          if [[ -n "$(git status --porcelain public/ai-seo/index.jsonld 2>/dev/null)" ]]; then
+          echo "Validating all JSON-LD files..."
+          node scripts/validateBeacons.mjs
+      - name: Commit JSON-LD and beacons
+        run: |
+          if [[ -n "$(git status --porcelain public/ai-seo 2>/dev/null)" ]]; then
             git config user.name "ai-seo-bot"
             git config user.email "seo@oaa.dev"
-            git add public/ai-seo/index.jsonld ai-seo-engine/out/*.json
-            git commit -m "chore(ai-seo): refresh integrity feed"
+            git add public/ai-seo/index.jsonld public/ai-seo/beacons/*.jsonld ai-seo-engine/out/*.json
+            git commit -m "chore(ai-seo): refresh feed + beacons"
             git push
           else
             echo "No changes."
