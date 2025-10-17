@@ -1,33 +1,28 @@
 import { useOaaContext } from "../../lib/context/useOaaContext";
-import SentinelBadge from "../../components/SentinelBadge";
+import DevLayout from "../../components/DevLayout";
+import MemoryManager from "../../components/MemoryManager";
 
 export default function DevContext() {
   const ctx = useOaaContext();
   
   if (ctx.status === "loading") {
     return (
-      <main style={{ maxWidth: 980, margin: "40px auto", padding: "0 20px" }}>
-        <h1>OAA Context</h1>
+      <DevLayout>
         <p>Loading...</p>
-      </main>
+      </DevLayout>
     );
   }
   
   if (ctx.status === "error") {
     return (
-      <main style={{ maxWidth: 980, margin: "40px auto", padding: "0 20px" }}>
-        <h1>OAA Context</h1>
+      <DevLayout>
         <p style={{ color: "#ff6a6a" }}>Error: {ctx.error}</p>
-      </main>
+      </DevLayout>
     );
   }
 
   return (
-    <main style={{ maxWidth: 980, margin: "40px auto", padding: "0 20px" }}>
-      <div style={{display:"flex", gap:12, alignItems:"center", marginBottom:16}}>
-        <h1>OAA Context</h1>
-        <SentinelBadge />
-      </div>
+    <DevLayout>
       <p>Canonical context data for the OAA system.</p>
       
       <div style={{ marginTop: 20 }}>
@@ -43,6 +38,8 @@ export default function DevContext() {
           {JSON.stringify(ctx.data, null, 2)}
         </pre>
       </div>
-    </main>
+
+      <MemoryManager />
+    </DevLayout>
   );
 }
