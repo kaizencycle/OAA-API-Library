@@ -14,13 +14,17 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "three": "0.161.0",
-    "ethers": "^6.8.1"
+    "ethers": "^6.8.1",
+    "bullmq": "^4.15.4",
+    "ioredis": "^5.3.2",
+    "lru-cache": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "20.11.30",
     "@types/react": "18.2.64",
     "@types/react-dom": "18.2.21",
     "eslint": "8.57.0",
-    "typescript": "5.4.5"
+    "typescript": "5.4.5",
+    "esbuild-register": "^3.5.0"
   }
 }
