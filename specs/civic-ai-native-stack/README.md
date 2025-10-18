@@ -32,6 +32,7 @@ This specification defines a cohesive, running system that combines:
 | [06-code-verification.md](./06-code-verification.md) | Copilot overlap, thresholds, PR bot, tri-verification | ✅ Complete |
 | [07-incentives-gic.md](./07-incentives-gic.md) | GIC reward rules, economic model, governance | ✅ Complete |
 | [08-validation-checklist.md](./08-validation-checklist.md) | Deployment verification, acceptance tests | ✅ Complete |
+| [09-cultural-kernel-archetypes.md](./09-cultural-kernel-archetypes.md) | Psychological archetypes, cultural coherence, narrative identity | ✅ Complete |
 
 ## Minimal Acceptance Tests
 
