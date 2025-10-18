@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "eomm:sync": "node scripts/eomm-sync.mjs",
-    "eomm:sync:dry": "DRY_RUN=true node scripts/eomm-sync.mjs"
+    "eomm:sync:dry": "DRY_RUN=true node scripts/eomm-sync.mjs",
+    "test:quest-verifier": "node scripts/test-quest-verifier.mjs",
+    "test:quest-verifier:verbose": "node scripts/test-quest-verifier.mjs --verbose"
   },
   "dependencies": {
     "next": "^14.0.0",
