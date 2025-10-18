@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "hmac:note": "node scripts/hmacNote.mjs"
+    "hmac:note": "node scripts/hmacNote.mjs",
+    "postinstall": "node scripts/initAgentGuards.mjs",
+    "predev": "node scripts/initAgentGuards.mjs",
+    "prestart": "node scripts/initAgentGuards.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "next": "^14.0.0",
