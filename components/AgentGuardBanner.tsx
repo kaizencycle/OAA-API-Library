@@ -13,6 +13,7 @@ export default function AgentGuardBanner(){
       const j = await r.json();
       if(!j.ok) throw new Error(j.error||"guard_fetch_failed");
       setData({ guard:j.guard, cooldown:j.cooldown, remainingSec:j.remainingSec });
+      if (j.smoked) console.info("[AgentGuards] self-healed guard files");
       setErr(null);
     }catch(e:any){ setErr(e?.message||"load_failed"); }
   }
@@ -33,6 +34,19 @@ export default function AgentGuardBanner(){
         <Meter label={`noop ${guard.noopCount}/${guard.maxNoop}`} pct={pct} color={color} />
         <Chip>cooldown {fmt(remainingSec)}</Chip>
         <Btn onClick={load}>Refresh</Btn>
+        <Btn
+          onClick={async ()=>{
+            const key = prompt("Enter DEV sign key to reset guards");
+            if(!key) return;
+            const r = await fetch("/api/dev/agents/reset", { method:"POST", headers:{ "x-dev-key": key } });
+            const j = await r.json();
+            if(!j.ok){ alert(`Reset failed: ${j.error||"unknown"}`); return; }
+            await load();
+          }}
+          title="Zero noop counter and clear cooldown (DEV only)"
+        >
+          Reset (DEV)
+        </Btn>
       </div>
     </Bar>
   );
