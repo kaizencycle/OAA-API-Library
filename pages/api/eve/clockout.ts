@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import crypto from "crypto";
 import { readMemory, writeMemory } from "../../../lib/memory/fileStore";
 import { sha256hex } from "../../../lib/crypto/sha";
+import { postEomm, createEommEntry } from "../../../lib/eomm/postEomm";
 
 function hmacValid(raw: string, secret: string, provided?: string | null) {
   if (!secret || !provided) return false;
@@ -58,6 +59,23 @@ export default async function handler(req:NextApiRequest,res:NextApiResponse){
       });
       writeMemory(m2);
     } catch {}
+    
+    // Post to EOMM system
+    try {
+      const eommEntry = createEommEntry(cycle, "clock-out", {
+        wins,
+        blocks,
+        tomorrowIntent,
+        meta,
+        digest,
+        sha256: sha
+      }, companion);
+      const eommResult = await postEomm(eommEntry);
+      console.log("EOMM post result:", eommResult);
+    } catch (eommError) {
+      console.error("EOMM post failed:", eommError);
+      // Don't fail the clock-out if EOMM fails
+    }
     
     return res.status(200).json({ok:true,cycle,sha256:sha,proof:seal.proof,ts:seal.ts||now});
   }catch(e:any){

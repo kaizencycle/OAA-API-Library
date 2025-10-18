@@ -1,0 +1,159 @@
+name: EOMM Sync to Ledger
+
+on:
+  push:
+    paths:
+      - "data/eomm/*.json"
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync-to-ledger:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Find EOMM files
+        id: find-eomm
+        run: |
+          if [ -d "data/eomm" ]; then
+            echo "files=$(find data/eomm -name '*.json' -type f | head -10)" >> $GITHUB_OUTPUT
+            echo "count=$(find data/eomm -name '*.json' -type f | wc -l)" >> $GITHUB_OUTPUT
+          else
+            echo "files=" >> $GITHUB_OUTPUT
+            echo "count=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync to Ledger
+        if: steps.find-eomm.outputs.count > 0
+        env:
+          LEDGER_BASE_URL: ${{ vars.LEDGER_BASE_URL }}
+          LEDGER_ADMIN_TOKEN: ${{ secrets.LEDGER_ADMIN_TOKEN }}
+        run: |
+          echo "Found ${{ steps.find-eomm.outputs.count }} EOMM files to sync"
+          
+          # Create a simple sync script
+          cat > sync-eomm.js << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+          
+          const LEDGER_BASE_URL = process.env.LEDGER_BASE_URL;
+          const LEDGER_ADMIN_TOKEN = process.env.LEDGER_ADMIN_TOKEN;
+          
+          if (!LEDGER_BASE_URL || !LEDGER_ADMIN_TOKEN) {
+            console.error('Missing LEDGER_BASE_URL or LEDGER_ADMIN_TOKEN');
+            process.exit(1);
+          }
+          
+          async function syncToLedger(filePath) {
+            try {
+              const content = fs.readFileSync(filePath, 'utf8');
+              const entry = JSON.parse(content);
+              const sha256 = crypto.createHash('sha256').update(content).digest('hex');
+              
+              const payload = {
+                title: entry.title || `EOMM Entry ${entry.id}`,
+                slug: `eomm-${entry.id}`,
+                companion: entry.agent || 'eve',
+                sha256: sha256,
+                metadata: {
+                  cycle: entry.cycle,
+                  tags: entry.tags || [],
+                  timestamp: entry.timestamp
+                }
+              };
+              
+              const response = await fetch(`${LEDGER_BASE_URL}/seal`, {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json',
+                  'authorization': `Bearer ${LEDGER_ADMIN_TOKEN}`
+                },
+                body: JSON.stringify(payload)
+              });
+              
+              const result = await response.json();
+              
+              if (response.ok && result.ok) {
+                console.log(`✅ Synced ${filePath} to Ledger: ${result.proof}`);
+                return { success: true, proof: result.proof };
+              } else {
+                console.error(`❌ Failed to sync ${filePath}:`, result.error);
+                return { success: false, error: result.error };
+              }
+            } catch (error) {
+              console.error(`❌ Error processing ${filePath}:`, error.message);
+              return { success: false, error: error.message };
+            }
+          }
+          
+          async function main() {
+            const eommDir = 'data/eomm';
+            if (!fs.existsSync(eommDir)) {
+              console.log('No data/eomm directory found');
+              return;
+            }
+            
+            const files = fs.readdirSync(eommDir)
+              .filter(file => file.endsWith('.json'))
+              .map(file => path.join(eommDir, file));
+            
+            console.log(`Found ${files.length} EOMM files to sync`);
+            
+            let successCount = 0;
+            let errorCount = 0;
+            
+            for (const file of files) {
+              const result = await syncToLedger(file);
+              if (result.success) {
+                successCount++;
+              } else {
+                errorCount++;
+              }
+            }
+            
+            console.log(`\nSync complete: ${successCount} successful, ${errorCount} errors`);
+            
+            if (errorCount > 0) {
+              process.exit(1);
+            }
+          }
+          
+          main().catch(console.error);
+          EOF
+          
+          node sync-eomm.js
+
+      - name: Clean up processed files
+        if: steps.find-eomm.outputs.count > 0
+        run: |
+          # Move processed files to archive or delete them
+          if [ -d "data/eomm" ]; then
+            mkdir -p data/eomm/processed
+            find data/eomm -name '*.json' -type f -exec mv {} data/eomm/processed/ \;
+            echo "Moved processed files to data/eomm/processed/"
+          fi
+
+      - name: Commit processed files
+        if: steps.find-eomm.outputs.count > 0
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/eomm/processed/
+          git commit -m "Archive processed EOMM files" || echo "No changes to commit"
+          git push || echo "Nothing to push"

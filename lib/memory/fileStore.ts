@@ -5,7 +5,12 @@ const DEFAULT_PATH = path.join(process.cwd(), "OAA_MEMORY.json");
 
 export function readMemory(filePath = process.env.OAA_MEMORY_PATH || DEFAULT_PATH) {
   if (!fs.existsSync(filePath)) {
-    const seed = { version: "v1", updatedAt: new Date().toISOString(), notes: [] as any[] };
+    const seed = { 
+      version: "v1", 
+      updatedAt: new Date().toISOString(), 
+      notes: [] as any[],
+      eomm: [] as any[]
+    };
     fs.writeFileSync(filePath, JSON.stringify(seed, null, 2));
     return seed;
   }
