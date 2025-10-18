@@ -2,45 +2,6 @@
   "@context": "https://schema.org",
   "@type": "DataFeed",
   "name": "OAA Integrity Feed",
-  "description": "Open Autonomous Academy integrity-weighted content feed",
-  "dateModified": "2024-10-17T22:00:00Z",
-  "dataFeedElement": [
-    {
-      "@context": "https://schema.org",
-      "@type": "CreativeWork",
-      "id": "home",
-      "url": "/",
-      "name": "OAA Hub",
-      "description": "Open Autonomous Academy — integrity-first AI governance loop.",
-      "dateModified": "2024-10-17T22:00:00Z",
-      "isAccessibleForFree": true,
-      "keywords": ["OAA","AI SEO","GIC","Virtue Accords","Ledger"],
-      "oaa": {
-        "kind": "page",
-        "gicScore": 0.85,
-        "accordsScore": 0.92,
-        "freshnessScore": 0.98,
-        "integrityScore": 0.91
-      }
-    },
-    {
-      "@context": "https://schema.org",
-      "@type": "CreativeWork",
-      "id": "/dev/memory",
-      "url": "/dev/memory",
-      "name": "OAA Memory",
-      "description": "Durable notes and daily cycle digests (Eve).",
-      "dateModified": "2024-10-17T22:00:00Z",
-      "isAccessibleForFree": true,
-      "keywords": ["Memory","Eve","Cycles"],
-      "oaa": {
-        "kind": "memory",
-        "gicScore": 0.78,
-        "accordsScore": 0.85,
-        "freshnessScore": 0.95,
-        "integrityScore": 0.86,
-        "companion": "eve"
-      }
-    }
-  ]
+  "dateModified": "2025-10-18T01:47:26.644Z",
+  "dataFeedElement": []
 }
