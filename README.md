@@ -39,6 +39,19 @@ This implementation creates semantic beacons that funnel search traffic toward y
 - `/api/geo/region` - Geographic attestations
 - `/api/geo/near` - Nearby civic content
 
+## GIC UBI (Public API)
+- `GET /api/gic/ubi/:userId?cycle=C-XXX` → per-user payout + proof breakdown
+- `GET /api/gic/ubi/summary?cycle=C-XXX` → aggregate cycle totals
+- `POST /api/gic/ubi/run?cycle=C-XXX` (admin) → triggers indexer compute
+
+### Proofs
+Use `/api/proof/:id` to resolve an immutable ledger proof card with links to beacon/E.O.M.M.
+
+Quick visual embed in OAA
+
+On any OAA page:
+<GicUbiCard userId="michael.gic" cycle="C-108" />
+
 ## 🚀 Quick Start
 
 ```bash
