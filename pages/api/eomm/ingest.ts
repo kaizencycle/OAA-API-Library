@@ -14,8 +14,10 @@ function validateEntry(entry: any): string[] {
   for (const k of ["title","timestamp","agent","cycle","content"]) {
     if (!entry[k] || String(entry[k]).trim().length === 0) errs.push(`missing_${k}`);
   }
+  if (entry.sources && !Array.isArray(entry.sources)) errs.push("sources_not_array");
   return errs;
 }
+
 function sha256Hex(s: string) { return crypto.createHash("sha256").update(s).digest("hex"); }
 function slugify(s: string) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
 
@@ -47,6 +49,41 @@ async function writeToGitHub(relPath: string, body: string) {
   return relPath;
 }
 
+function buildJsonLd(entry: any, sha: string) {
+  // Build citations from sources
+  const citations = (entry.sources || []).map((s: any) => ({
+    "@type": s.type === "repo" ? "SoftwareSourceCode" :
+             s.type === "dataset" ? "Dataset" :
+             "WebPage",
+    "name": s.name || s.url,
+    "url": s.url,
+    "hash": s.hash,
+    "note": s.note
+  }));
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "CreativeWork",
+    "name": entry.title,
+    "author": entry.author || "Michael Judan",
+    "agent": entry.agent,
+    "dateCreated": entry.timestamp,
+    "text": entry.content,
+    "keywords": entry.tags || ["EOMM","OAA","Reflection"],
+    "integrityHash": `sha256:${sha}`,
+    "attestation": { "signer": "oaa_hub", "signature": `sha256:${sha}` },
+    "citation": citations,
+    "isBasedOn": citations.map((c: any) => c.url).slice(0, 32),
+    "prov": {
+      "generatedAtTime": new Date().toISOString(),
+      "wasAttributedTo": entry.agent,
+      "used": citations.map((c: any) => c.url)
+    },
+    "oaa": { "kind": "memory", "cycle": entry.cycle, "companion": entry.agent },
+    "_source": { "eomm_file": `data/eomm/${entry.timestamp.replace(/[:]/g,"").slice(0,15)}-${entry.cycle || "C-XXX"}-${slugify(entry.title || "entry")}.json` }
+  };
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ ok:false, error:"method_not_allowed" });
 
@@ -68,8 +105,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else {
       await writeToDisk(relPath, body);
     }
-    return res.status(200).json({ ok:true, verdict:"pass", sha256: sha, file: relPath });
-  } catch (e:any) {
+
+    // Build JSON-LD for beacon
+    const jsonld = buildJsonLd(entry, sha);
+    
+    return res.status(200).json({ 
+      ok: true, 
+      verdict: "pass", 
+      sha256: sha, 
+      file: relPath,
+      jsonld: jsonld
+    });
+  } catch (e: any) {
     return res.status(500).json({ ok:false, error: String(e.message || e) });
   }
 }

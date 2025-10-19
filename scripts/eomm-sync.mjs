@@ -4,6 +4,7 @@
  * - Reads JSON files from ./data/eomm/
  * - Validates shape; quarantines invalid to ./data/eomm/_invalid
  * - Computes sha256; wraps JSON-LD; POSTs to LEDGER/ledger/attest
+ * - Writes back ledger proof and beacon URL to memory files
  *
  * Env:
  *   LEDGER_BASE_URL, LEDGER_ADMIN_TOKEN (required)
@@ -47,10 +48,22 @@ function validateEntry(entry) {
   for (const k of ["title","timestamp","agent","cycle","content"]) {
     if (!entry[k] || String(entry[k]).trim().length === 0) errs.push(`missing_${k}`);
   }
+  if (entry.sources && !Array.isArray(entry.sources)) errs.push("sources_not_array");
   return errs;
 }
 
 function toJsonLd(entry, sha, filename) {
+  // Build citations from sources
+  const citations = (entry.sources || []).map((s) => ({
+    "@type": s.type === "repo" ? "SoftwareSourceCode" :
+             s.type === "dataset" ? "Dataset" :
+             "WebPage",
+    "name": s.name || s.url,
+    "url": s.url,
+    "hash": s.hash,
+    "note": s.note
+  }));
+
   return {
     "@context": "https://schema.org",
     "@type": "CreativeWork",
@@ -60,8 +73,15 @@ function toJsonLd(entry, sha, filename) {
     "dateCreated": entry.timestamp,
     "text": entry.content,
     "keywords": entry.tags || ["EOMM","OAA","Reflection"],
-    "integrityHash": sha,
-    "attestation": { "signer": "oaa_hub", "signature": "sha256:" + sha },
+    "integrityHash": `sha256:${sha}`,
+    "attestation": { "signer": "oaa_hub", "signature": `sha256:${sha}` },
+    "citation": citations,
+    "isBasedOn": citations.map((c) => c.url).slice(0, 32),
+    "prov": {
+      "generatedAtTime": new Date().toISOString(),
+      "wasAttributedTo": entry.agent,
+      "used": citations.map((c) => c.url)
+    },
     "oaa": { "kind": "memory", "cycle": entry.cycle, "companion": entry.agent },
     "_source": { "eomm_file": filename }
   };
@@ -81,6 +101,19 @@ function loadSummary() {
   try { return JSON.parse(fs.readFileSync(SUMMARY,"utf8")); } catch { return { ok:0, posted:0, invalid:0, errors:[] }; }
 }
 function saveSummary(s) { fs.writeFileSync(SUMMARY, JSON.stringify(s, null, 2)); }
+
+function updateMemoryFile(filePath, ledgerProof, beaconUrl) {
+  try {
+    const entry = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!entry.links) entry.links = {};
+    entry.links.ledgerProof = ledgerProof;
+    entry.links.beaconUrl = beaconUrl;
+    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2));
+    console.log(`[updated] ${filePath} with ledger proof and beacon URL`);
+  } catch (e) {
+    console.warn(`[warning] Failed to update ${filePath}: ${e.message}`);
+  }
+}
 
 async function main(){
   ensureDirs();
@@ -124,7 +157,19 @@ async function main(){
       } else {
         console.log(`[ok] ${f} → sha256=${sha}`);
         sum.ok++; sum.posted++;
-        // optional: move posted file to an archive; for now, leave in place for idempotent dedupe by hash
+        
+        // Parse response to get proof ID
+        try {
+          const responseData = JSON.parse(res.body);
+          const proofId = responseData.proofId;
+          if (proofId) {
+            const ledgerProof = `${LEDGER}/ledger/proofs/${proofId}`;
+            const beaconUrl = `/public/ai-seo/beacons/${sha}.jsonld`;
+            updateMemoryFile(fp, ledgerProof, beaconUrl);
+          }
+        } catch (e) {
+          console.warn(`[warning] Failed to parse ledger response: ${e.message}`);
+        }
       }
     } catch (e) {
       console.warn(`[error] ${f}: ${e.message}`);
