@@ -26,7 +26,15 @@
       "@/lib/*": ["./src/lib/*"],
       "@/api/*": ["./src/api/*"],
       "@/packs/*": ["./src/packs/*"],
-      "@/core/*": ["./src/core/*"]
+      "@/core/*": ["./src/core/*"],
+      "@/pages/*": ["./src/pages/*"],
+      "@/schemas/*": ["./src/schemas/*"],
+      "@/specs/*": ["./src/specs/*"],
+      "@/scripts/*": ["./src/scripts/*"],
+      "@/data/*": ["./src/data/*"],
+      "@/lore/*": ["./src/lore/*"],
+      "@/gic/*": ["./src/gic/*"],
+      "@/tests/*": ["./src/tests/*"]
     }
   },
   "include": [

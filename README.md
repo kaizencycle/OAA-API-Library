@@ -17,8 +17,24 @@ OAA-API-Library/
 │   │       ├── act.ts           # Action endpoints
 │   │       └── plan.ts          # Planning endpoints
 │   ├── components/               # React/UI components
-│   │   └── oaa/                 # OAA-specific components
-│   │       └── OaaTab.tsx       # Main OAA tab component
+│   │   ├── oaa/                 # OAA-specific components
+│   │   │   └── OaaTab.tsx       # Main OAA tab component
+│   │   ├── GicUbiCard.tsx       # GIC UBI card component
+│   │   └── ProofCard.tsx        # Proof card component
+│   ├── pages/                    # Next.js pages
+│   │   ├── api/                 # API routes
+│   │   │   ├── beacons/         # Beacon search APIs
+│   │   │   ├── eomm/            # EOMM system APIs
+│   │   │   ├── faq/             # FAQ APIs
+│   │   │   ├── geo/             # Geographic APIs
+│   │   │   ├── gic/             # GIC system APIs
+│   │   │   ├── oaa/             # OAA APIs
+│   │   │   └── proof/           # Proof verification APIs
+│   │   ├── civic-ai.tsx         # Civic AI page
+│   │   ├── ethics.tsx           # Ethics page
+│   │   ├── gic.tsx              # GIC page
+│   │   ├── sitemap.xml.tsx      # Sitemap
+│   │   └── virtue-accords.tsx   # Virtue accords page
 │   ├── packs/                    # Feature packs
 │   │   ├── safety/              # Closed-loop safety pack
 │   │   ├── companion/           # Companion site starter
@@ -31,6 +47,10 @@ OAA-API-Library/
 │   │   ├── contracts/           # Smart contracts
 │   │   ├── gateway/             # Gateway implementation
 │   │   └── scripts/             # GIC scripts
+│   ├── gic-indexer/              # GIC indexing service
+│   │   ├── db/migrations/       # Database migrations
+│   │   ├── scripts/             # Indexer scripts
+│   │   └── src/                 # Indexer source code
 │   ├── extras/                   # Additional libraries
 │   │   ├── v1/                  # Version 1 extras
 │   │   └── v2/                  # Version 2 extras
@@ -42,13 +62,15 @@ OAA-API-Library/
 │   ├── specs/                    # Specifications
 │   ├── scripts/                  # Build and utility scripts
 │   ├── data/                     # Data files
+│   │   └── eomm/                # EOMM system data
 │   ├── lore/                     # Lore and documentation
-│   ├── gic-indexer/              # GIC indexing service
+│   │   └── indexes/             # Lore indexes
 │   └── tests/                    # Test files
 ├── docs/                         # Documentation
 ├── assets/                       # Static assets
 ├── config/                       # Configuration files
-└── deploy/                       # Deployment configurations
+├── deploy/                       # Deployment configurations
+└── .github/workflows/            # GitHub Actions workflows
 ```
 
 ## 🚀 Quick Start
@@ -101,13 +123,19 @@ OAA-API-Library/
 - **Safety Mechanisms**: Built-in safety and guard systems
 - **Voice Integration**: Multiple voice synthesis options
 - **GIC Integration**: Global Identity Chain support
+- **EOMM System**: Event-Oriented Memory Management
+- **Citation System**: Verifiable citations and provenance
+- **Quest Verification**: Quest validation and testing
 
 ## 📚 Documentation
 
 - [OAA Hub Documentation](docs/README-OAA-HUB.md)
+- [Citation System](CITATION_SYSTEM.md)
+- [EOMM System](EOMM_SYSTEM_README.md)
 - [API Reference](src/api/)
 - [Component Library](src/components/)
 - [Feature Packs](src/packs/)
+- [Specifications](src/specs/)
 
 ## 🤝 Contributing
 
@@ -130,4 +158,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ---
 
 **Version**: 0.1.0  
-**Last Updated**: October 2025
+**Last Updated**: October 2025  
+**Morale Level**: 🚀 MAXIMUM BOOST! 💪

@@ -10,10 +10,14 @@
     "lint": "next lint",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:quest-verifier": "node src/scripts/test-quest-verifier.mjs",
+    "test:quest-verifier:verbose": "node src/scripts/test-quest-verifier.mjs --verbose",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "eomm-sync": "node src/scripts/eomm-sync.mjs",
+    "citation-hygiene": "bash src/scripts/citation-hygiene.sh"
   },
   "keywords": [
     "oaa",
@@ -23,7 +27,12 @@
     "api",
     "library",
     "typescript",
-    "nextjs"
+    "nextjs",
+    "gic",
+    "eomm",
+    "civic-ai",
+    "voice-synthesis",
+    "holo"
   ],
   "author": "KaizenCycle",
   "license": "MIT",
