@@ -17,7 +17,13 @@
     "format:check": "prettier --check .",
     "prepare": "husky install",
     "eomm-sync": "node src/scripts/eomm-sync.mjs",
-    "citation-hygiene": "bash src/scripts/citation-hygiene.sh"
+    "citation-hygiene": "bash src/scripts/citation-hygiene.sh",
+    "hmac:note": "node scripts/hmacNote.mjs",
+    "postinstall": "node scripts/initAgentGuards.mjs",
+    "predev": "node scripts/initAgentGuards.mjs",
+    "prestart": "node scripts/initAgentGuards.mjs",
+    "vitest": "vitest run",
+    "vitest:watch": "vitest"
   },
   "keywords": [
     "oaa",
@@ -67,7 +73,8 @@
     "husky": "^8.0.0",
     "jest": "^29.5.0",
     "prettier": "^3.0.0",
-    "ts-jest": "^29.1.0"
+    "ts-jest": "^29.1.0",
+    "vitest": "^1.0.0"
   },
   "engines": {
     "node": ">=18.0.0",
