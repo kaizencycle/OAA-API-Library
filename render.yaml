@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: oaa-api-library
+    env: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: ORIGINS
+        value: "https://kaizencycle.org,https://reflections-app.onrender.com,http://localhost:3000"
+      - key: CIVIC_LEDGER_URL
+        value: "https://civic-protocol-core-ledger.onrender.com"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+    healthCheckPath: /health
