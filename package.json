@@ -60,7 +60,9 @@
     "@types/react-dom": "^18.0.0",
     "aws-sdk": "^2.1500.0",
     "crypto": "^1.0.1",
-    "yaml": "^2.3.4"
+    "yaml": "^2.3.4",
+    "openai": "^4.0.0",
+    "@anthropic-ai/sdk": "^0.9.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
