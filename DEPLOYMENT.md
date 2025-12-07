@@ -19,11 +19,15 @@ services:
     healthCheckPath: /health
 ```
 
-**Environment Variables:**
-- `ORIGINS`: CORS origins (comma-separated)
+**Environment Variables (Required):**
+- `ANTHROPIC_API_KEY`: Anthropic API key (required for `/api/tutor` endpoint)
+
+**Environment Variables (Optional):**
+- `ORIGINS`: Additional CORS origins (comma-separated) beyond the defaults
+- `OPENAI_API_KEY`: OpenAI API key (for future provider support)
+- `DEEPSEEK_API_KEY`: DeepSeek API key (for future provider support)
 - `CIVIC_LEDGER_URL`: Civic Ledger service URL
-- `OPENAI_API_KEY`: OpenAI API key (optional)
-- `REDIS_URL`: Redis connection string (optional)
+- `REDIS_URL`: Redis connection string
 
 ### Frontend (Next.js) - Static Site
 
@@ -44,8 +48,8 @@ For the Next.js frontend, you can deploy it as a static site:
    - The FastAPI backend will be deployed as the primary service
 
 3. **Environment Variables:**
-   - Set the required environment variables in the Render dashboard
-   - `ORIGINS` should include your frontend domain
+   - Set `ANTHROPIC_API_KEY` in the Render dashboard (required for tutor)
+   - Optionally add additional `ORIGINS` if needed
 
 4. **Health Check:**
    - The service includes a health check at `/health`
@@ -54,21 +58,39 @@ For the Next.js frontend, you can deploy it as a static site:
 ### API Endpoints
 
 Once deployed, the FastAPI backend will be available at:
+
+#### Core Endpoints
 - **Health Check:** `GET /health`
 - **Agent Registration:** `POST /agents/register`
 - **Agent Query:** `POST /agents/query`
 - **Learning Submission:** `POST /oaa/learn/submit`
-- **API Documentation:** `GET /docs` (Swagger UI)
-- **Alternative Docs:** `GET /redoc` (ReDoc)
+
+#### Tutor Endpoints (NEW)
+- **Tutor Chat:** `POST /api/tutor` - AI tutoring with Claude
+- **Get Providers:** `GET /api/tutor/providers` - Available AI providers
+- **Get Subjects:** `GET /api/tutor/subjects` - Available subjects
+
+#### Documentation
+- **Swagger UI:** `GET /docs`
+- **ReDoc:** `GET /redoc`
 
 ### CORS Configuration
 
-The FastAPI backend is configured with CORS middleware to allow requests from:
-- `https://kaizencycle.org`
-- `https://reflections-app.onrender.com`
-- `http://localhost:3000` (development)
+The FastAPI backend is configured with dynamic CORS support:
 
-You can modify the `ORIGINS` environment variable to include additional domains.
+**Default Allowed Origins:**
+- `http://localhost:3000` (local Next.js development)
+- `http://localhost:5173` (local Vite development)
+- `http://localhost:8080` (alternative local)
+- `https://mobius-browser-shell.vercel.app` (production frontend)
+
+**Automatic Vercel Preview Support:**
+- All Vercel preview deployments matching `mobius-browser-shell-*.vercel.app` are automatically allowed
+- No manual configuration needed for preview deployments
+
+**Custom Origins:**
+- Add additional origins via the `ORIGINS` environment variable (comma-separated)
+- Example: `ORIGINS=https://my-custom-domain.com,https://another-domain.com`
 
 ### Database Integration
 
