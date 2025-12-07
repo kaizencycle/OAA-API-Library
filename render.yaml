@@ -8,11 +8,19 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
+      # CORS: Default origins include localhost:3000/5173/8080 and mobius-browser-shell.vercel.app
+      # Vercel preview deployments (mobius-browser-shell-*.vercel.app) are auto-allowed
+      # Add additional origins here if needed (comma-separated)
       - key: ORIGINS
-        value: "https://kaizencycle.org,https://reflections-app.onrender.com,http://localhost:3000"
+        value: "https://kaizencycle.org,https://reflections-app.onrender.com"
+      # Required for /api/tutor endpoint
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: CIVIC_LEDGER_URL
         value: "https://civic-protocol-core-ledger.onrender.com"
       - key: OPENAI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
         sync: false
       - key: REDIS_URL
         fromService:
