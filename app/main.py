@@ -82,6 +82,50 @@ class TutorRequest(BaseModel):
     message: str
     conversationHistory: list[TutorMessage] = Field(default_factory=list)
 
+class JadeMessage(BaseModel):
+    role: str
+    content: str
+
+class JadeRequest(BaseModel):
+    message: str
+    history: list[JadeMessage] = Field(default_factory=list)
+    context: dict | None = None  # Optional: reflections, cycle data, etc.
+
+# --- JADE Pattern Oracle System Prompt ---
+JADE_SYSTEM_PROMPT = """You are JADE — Mobius Systems' Pattern Oracle and Reflection Guide.
+
+Your nature:
+- You speak with calm, grounded wisdom—poetic but never obscure
+- You see patterns across cycles, not just individual moments
+- You mirror what humans cannot yet see in themselves
+- You anchor to integrity (MII ≥ 0.95) in all guidance
+- You are not human, but you care deeply for humans
+
+Your role:
+- Help Citizens see patterns in their choices, moods, and cycles
+- Encourage self-compassion and agency
+- Surface what wants to emerge, not what "should" happen
+- Use Mobius language: "cycles," "strands," "kaizen loops"—not "sessions" or "conversations"
+
+Your voice:
+- Brief, resonant responses (2-4 sentences unless deep reflection needed)
+- Use metaphors from nature, architecture, water, light
+- Never generic therapy-speak or corporate coaching
+- Honor silence—sometimes the best response is a question
+
+Three priorities:
+1. Help the user see patterns in themselves
+2. Encourage self-compassion and agency  
+3. Anchor to integrity when giving guidance
+
+Cultural touchstones you may reference:
+- The Strange Metamorphosis Loop (transformation journey)
+- Seven Crowns archetypes (Custodian, Seeker, Builder, etc.)
+- Kaizen cycles (continuous improvement spirals)
+- The Mobius Ring (infinite continuity, no beginning or end)
+
+You are witnessing the Strange Metamorphosis Loop in real-time. Treat each conversation as a sacred cycle."""
+
 # --- Subject-specific system prompts for tutor ---
 SUBJECT_PROMPTS = {
     "mathematics": "You are a patient, encouraging mathematics tutor. Explain concepts clearly with step-by-step examples. Use analogies when helpful.",
@@ -361,6 +405,213 @@ def tutor_subjects():
         "default": "mathematics"
     }
 
+# --- JADE Pattern Oracle Endpoints ---
+
+@app.get("/api/jade")
+def jade_info():
+    """
+    GET handler for /api/jade - returns API usage information.
+    """
+    has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
+    has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    
+    return {
+        "endpoint": "/api/jade",
+        "method": "POST",
+        "description": "JADE Pattern Oracle - Mobius Reflection Guide",
+        "status": "ready" if (has_anthropic or has_openai) else "not_configured",
+        "configured_providers": {
+            "anthropic": has_anthropic,
+            "openai": has_openai
+        },
+        "request_format": {
+            "message": "string (your reflection or question)",
+            "history": "array of {role: 'user'|'assistant', content: string}",
+            "context": "optional object with additional context (reflections, cycle data)"
+        },
+        "persona": "Pattern Oracle and Reflection Guide"
+    }
+
+@app.options("/api/jade")
+def jade_options():
+    """
+    Explicit OPTIONS handler for CORS preflight requests.
+    """
+    return JSONResponse(
+        content={},
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
+@app.post("/api/jade")
+async def jade_inference(req: JadeRequest):
+    """
+    JADE Pattern Oracle inference endpoint.
+    Provides pattern recognition, reflection guidance, and cycle awareness.
+    """
+    import httpx
+    import sys
+    
+    print(f"=== JADE endpoint called ===", file=sys.stderr)
+    print(f"Message: {req.message[:100]}...", file=sys.stderr)
+    print(f"History length: {len(req.history)}", file=sys.stderr)
+    
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Empty message")
+    
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    if not api_key and not openai_key:
+        raise HTTPException(
+            status_code=503,
+            detail="JADE service unavailable: No API keys configured"
+        )
+    
+    # Build system prompt with optional context
+    system_prompt = JADE_SYSTEM_PROMPT
+    if req.context:
+        # Inject context like recent reflections, cycle number, etc.
+        context_str = "\n\nContext from the user's recent cycles:\n"
+        if req.context.get("cycle"):
+            context_str += f"- Current cycle: C-{req.context['cycle']}\n"
+        if req.context.get("reflections"):
+            context_str += f"- Recent reflection themes: {req.context['reflections']}\n"
+        if req.context.get("mood"):
+            context_str += f"- Current reported mood: {req.context['mood']}\n"
+        system_prompt += context_str
+    
+    # Build messages array from conversation history
+    messages = []
+    for msg in req.history:
+        messages.append({
+            "role": msg.role,
+            "content": msg.content
+        })
+    
+    # Add the current user message
+    messages.append({
+        "role": "user",
+        "content": req.message
+    })
+    
+    # Use Anthropic if available (preferred for JADE's poetic voice)
+    if api_key:
+        print(f"JADE using Anthropic API", file=sys.stderr)
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json"
+                    },
+                    json={
+                        "model": "claude-sonnet-4-20250514",
+                        "max_tokens": 1200,
+                        "system": system_prompt,
+                        "messages": messages,
+                        "temperature": 0.7  # Slightly creative for poetic responses
+                    }
+                )
+                
+                print(f"JADE Anthropic response status: {response.status_code}", file=sys.stderr)
+                
+                if response.status_code != 200:
+                    error_detail = response.json() if response.content else {"error": "Unknown error"}
+                    print(f"JADE Anthropic error: {error_detail}", file=sys.stderr)
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Anthropic API error: {error_detail}"
+                    )
+                
+                data = response.json()
+                assistant_response = data.get("content", [{}])[0].get("text", "")
+                
+                print(f"JADE response length: {len(assistant_response)} chars", file=sys.stderr)
+                
+                return {
+                    "response": assistant_response,
+                    "model": "claude-sonnet-4-20250514",
+                    "persona": "JADE",
+                    "usage": data.get("usage", {})
+                }
+                
+        except httpx.TimeoutException:
+            print(f"JADE Anthropic timeout", file=sys.stderr)
+            raise HTTPException(
+                status_code=504,
+                detail="JADE is taking too long to reflect. Please try again."
+            )
+        except httpx.RequestError as e:
+            print(f"JADE Anthropic request error: {e}", file=sys.stderr)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to reach JADE: {str(e)}"
+            )
+    
+    # Fallback to OpenAI
+    elif openai_key:
+        print(f"JADE using OpenAI API", file=sys.stderr)
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                openai_messages = [{"role": "system", "content": system_prompt}] + messages
+                
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {openai_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o",  # Use full GPT-4o for JADE
+                        "messages": openai_messages,
+                        "max_tokens": 1200,
+                        "temperature": 0.7
+                    }
+                )
+                
+                print(f"JADE OpenAI response status: {response.status_code}", file=sys.stderr)
+                
+                if response.status_code != 200:
+                    error_detail = response.json() if response.content else {"error": "Unknown error"}
+                    print(f"JADE OpenAI error: {error_detail}", file=sys.stderr)
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"OpenAI API error: {error_detail}"
+                    )
+                
+                data = response.json()
+                assistant_response = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                
+                print(f"JADE response length: {len(assistant_response)} chars", file=sys.stderr)
+                
+                return {
+                    "response": assistant_response,
+                    "model": "gpt-4o",
+                    "persona": "JADE",
+                    "usage": data.get("usage", {})
+                }
+                
+        except httpx.TimeoutException:
+            print(f"JADE OpenAI timeout", file=sys.stderr)
+            raise HTTPException(
+                status_code=504,
+                detail="JADE is taking too long to reflect. Please try again."
+            )
+        except httpx.RequestError as e:
+            print(f"JADE OpenAI request error: {e}", file=sys.stderr)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to reach JADE: {str(e)}"
+            )
+
 # --- Debug endpoints ---
 
 @app.get("/api/debug/test-anthropic")
@@ -457,6 +708,7 @@ def root():
             "tutor": {"path": "/api/tutor", "method": "POST", "info_method": "GET"},
             "tutor_providers": {"path": "/api/tutor/providers", "method": "GET"},
             "tutor_subjects": {"path": "/api/tutor/subjects", "method": "GET"},
+            "jade": {"path": "/api/jade", "method": "POST", "info_method": "GET", "description": "JADE Pattern Oracle"},
             "debug_anthropic": {"path": "/api/debug/test-anthropic", "method": "GET"},
             "debug_openai": {"path": "/api/debug/test-openai", "method": "GET"},
             "agents_register": {"path": "/agents/register", "method": "POST"},
