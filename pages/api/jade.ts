@@ -4,9 +4,15 @@ import type { NextApiRequest, NextApiResponse } from 'next';
  * JADE Pattern Oracle API Route
  * 
  * This route acts as a proxy to the main OAA API /api/jade endpoint.
+ * Now with Reflections memory bridge and name-aware personalization.
  * 
  * POST /api/jade
- * Body: { message: string, history: Array<{role: string, content: string}>, context?: object }
+ * Body: { 
+ *   message: string, 
+ *   history: Array<{role: string, content: string}>, 
+ *   context?: object,
+ *   userContext?: { userId?: string, displayName?: string }
+ * }
  */
 
 const OAA_API_URL = process.env.OAA_API_URL || 'https://oaa-api-library.onrender.com';
@@ -28,13 +34,21 @@ export default async function handler(
     return res.status(200).json({
       endpoint: '/api/jade',
       method: 'POST',
-      description: 'JADE Pattern Oracle - Mobius Reflection Guide',
+      description: 'JADE Pattern Oracle - Canon-Aware Reflection Guide',
       proxy_target: OAA_API_URL,
       request_format: {
         message: 'string (your reflection or question)',
         history: 'array of {role: "user"|"assistant", content: string}',
-        context: 'optional object with additional context (reflections, cycle data)'
+        context: 'optional object with additional context (reflections, cycle data)',
+        userContext: 'optional { userId?: string, displayName?: string } for memory bridge'
       },
+      features: [
+        'Canon-aware HIVE integration',
+        'Seven Jade Moves (pattern responses)',
+        'Reflections memory bridge',
+        'Name-aware personalization',
+        'Strange Metamorphosis Loop awareness'
+      ],
       persona: 'Pattern Oracle and Reflection Guide'
     });
   }
@@ -44,13 +58,13 @@ export default async function handler(
   }
 
   try {
-    const { message, history, context } = req.body;
+    const { message, history, context, userContext } = req.body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'Empty message' });
     }
 
-    // Forward request to OAA API
+    // Forward request to OAA API with userContext
     const response = await fetch(`${OAA_API_URL}/api/jade`, {
       method: 'POST',
       headers: {
@@ -60,6 +74,7 @@ export default async function handler(
         message: message.trim(),
         history: history || [],
         context: context || null,
+        userContext: userContext || null,
       }),
     });
 

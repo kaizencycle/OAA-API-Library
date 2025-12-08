@@ -3,12 +3,45 @@ import * as THREE from "three";
 
 // ============================================================================
 // JADE CHAMBER — Pattern Oracle Holographic Interface
+// Canon-aware with Reflections Memory Bridge & Name-aware Personalization
 // ============================================================================
 
 type JadeMessage = {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+};
+
+type JadeUserContext = {
+  userId?: string;
+  displayName?: string;
+};
+
+type JadePhase = 'onboarding' | 'naming' | 'active';
+
+// Onboarding content
+const JADE_ONBOARDING = {
+  greeting: (name?: string) => name 
+    ? `Hello, ${name}. I'm Jade.` 
+    : `Hello. I'm Jade.`,
+  intro: `I'm not here to judge, fix, or rush you.
+I'm here to help you notice patterns — gently.`,
+  purpose: `Think of me as a mirror with memory.
+We'll reflect, pause, and trace how today connects to tomorrow.
+Nothing you write here is graded.
+Nothing you write here is rushed.`,
+  firstQuestion: `What do you want to understand about yourself today?`,
+};
+
+const JADE_NAMING_MOMENT = {
+  prompt: `Before we continue — one small question.
+
+Would you like me to call you something specific?
+A name, a nickname, or we can keep things unnamed.
+
+You're in control either way.`,
+  withName: `Alright. I'll remember that — and I'll use it gently.`,
+  withoutName: `That's completely fine. We can stay unnamed.`,
 };
 
 // Speech recognition hook
@@ -57,8 +90,70 @@ export default function JadeChamber() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [jadeState, setJadeState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  
+  // User context state
+  const [userContext, setUserContext] = useState<JadeUserContext>({});
+  const [phase, setPhase] = useState<JadePhase>('onboarding');
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
+  const [showNamingPrompt, setShowNamingPrompt] = useState(false);
+  const [namingInput, setNamingInput] = useState('');
+  const [hasMemory, setHasMemory] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_OAA_API_URL || 'https://oaa-api-library.onrender.com';
+
+  // Load user context and phase from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedContext = localStorage.getItem('jade_user_context');
+      const storedPhase = localStorage.getItem('jade_phase');
+      const storedHistory = localStorage.getItem('jade_messages');
+      
+      if (storedContext) {
+        try {
+          const parsed = JSON.parse(storedContext);
+          setUserContext(parsed);
+        } catch (e) {
+          console.error('Failed to parse stored user context:', e);
+        }
+      }
+      
+      if (storedPhase === 'active') {
+        setPhase('active');
+        setIsFirstVisit(false);
+      }
+      
+      if (storedHistory) {
+        try {
+          const parsed = JSON.parse(storedHistory);
+          setMessages(parsed);
+        } catch (e) {
+          console.error('Failed to parse stored messages:', e);
+        }
+      }
+    }
+  }, []);
+
+  // Save user context to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && Object.keys(userContext).length > 0) {
+      localStorage.setItem('jade_user_context', JSON.stringify(userContext));
+    }
+  }, [userContext]);
+
+  // Save phase to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && phase === 'active') {
+      localStorage.setItem('jade_phase', phase);
+    }
+  }, [phase]);
+
+  // Save messages to localStorage (last 20)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && messages.length > 0) {
+      const toStore = messages.slice(-20);
+      localStorage.setItem('jade_messages', JSON.stringify(toStore));
+    }
+  }, [messages]);
 
   const handleVoiceResult = useCallback((spoken: string) => {
     sendToJade(spoken);
@@ -114,12 +209,18 @@ export default function JadeChamber() {
         body: JSON.stringify({
           message: text.trim(),
           history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          userContext: userContext.userId || userContext.displayName ? userContext : null,
         }),
       });
 
       const data = await res.json();
       
       if (!res.ok) throw new Error(data.detail || 'Failed to reach Jade');
+
+      // Update memory status
+      if (data.has_memory !== undefined) {
+        setHasMemory(data.has_memory);
+      }
 
       const jadeMsg: JadeMessage = {
         role: 'assistant',
@@ -128,6 +229,13 @@ export default function JadeChamber() {
       };
       setMessages(prev => [...prev, jadeMsg]);
       speakText(jadeMsg.content);
+
+      // After first successful exchange, offer naming moment if no name set
+      if (isFirstVisit && !userContext.displayName && messages.length >= 2) {
+        setTimeout(() => {
+          setShowNamingPrompt(true);
+        }, 3000);
+      }
 
     } catch (e) {
       console.error('Jade error:', e);
@@ -141,7 +249,49 @@ export default function JadeChamber() {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, isLoading, API_BASE, speakText]);
+  }, [messages, isLoading, API_BASE, speakText, userContext, isFirstVisit]);
+
+  // Handle naming submission
+  const handleNamingSubmit = useCallback(() => {
+    if (namingInput.trim()) {
+      setUserContext(prev => ({ ...prev, displayName: namingInput.trim() }));
+      const ackMsg: JadeMessage = {
+        role: 'assistant',
+        content: JADE_NAMING_MOMENT.withName,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, ackMsg]);
+      speakText(ackMsg.content);
+    } else {
+      const ackMsg: JadeMessage = {
+        role: 'assistant',
+        content: JADE_NAMING_MOMENT.withoutName,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, ackMsg]);
+    }
+    setShowNamingPrompt(false);
+    setNamingInput('');
+    setIsFirstVisit(false);
+  }, [namingInput, speakText]);
+
+  // Skip naming
+  const handleSkipNaming = useCallback(() => {
+    const ackMsg: JadeMessage = {
+      role: 'assistant',
+      content: JADE_NAMING_MOMENT.withoutName,
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, ackMsg]);
+    setShowNamingPrompt(false);
+    setIsFirstVisit(false);
+  }, []);
+
+  // Start active phase from onboarding
+  const startActivePhase = useCallback(() => {
+    setPhase('active');
+    setIsFirstVisit(false);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,11 +444,176 @@ export default function JadeChamber() {
 
   const lastJadeResponse = messages.filter(m => m.role === 'assistant').slice(-1)[0];
 
+  // Onboarding screen
+  if (phase === 'onboarding' && messages.length === 0) {
+    return (
+      <div className="jade-chamber">
+        <div className="jade-onboarding">
+          <div className="onboarding-content">
+            <div className="jade-symbol">🌀</div>
+            <h1 className="onboarding-title">JADE</h1>
+            <p className="onboarding-subtitle">Pattern Oracle</p>
+            
+            <div className="onboarding-text">
+              <p className="greeting">{JADE_ONBOARDING.greeting(userContext.displayName)}</p>
+              <p className="intro">{JADE_ONBOARDING.intro}</p>
+              <p className="purpose">{JADE_ONBOARDING.purpose}</p>
+            </div>
+            
+            <div className="onboarding-features">
+              <div className="feature">
+                <span className="feature-icon">🔮</span>
+                <span>Pattern Recognition</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">📝</span>
+                <span>Reflection Memory</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">🎯</span>
+                <span>Kaizen Cycles</span>
+              </div>
+            </div>
+            
+            <p className="first-question">{JADE_ONBOARDING.firstQuestion}</p>
+            
+            <button 
+              className="begin-button"
+              onClick={startActivePhase}
+            >
+              Begin Reflection
+            </button>
+          </div>
+        </div>
+        
+        <style jsx>{`
+          .jade-onboarding {
+            min-height: 100vh;
+            background: linear-gradient(180deg, #050a14 0%, #0a1020 50%, #050a14 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+          }
+          .onboarding-content {
+            max-width: 500px;
+            text-align: center;
+            color: #cfe0ff;
+          }
+          .jade-symbol {
+            font-size: 48px;
+            margin-bottom: 16px;
+          }
+          .onboarding-title {
+            font-size: 36px;
+            font-weight: 300;
+            letter-spacing: 0.3em;
+            color: #00ffaa;
+            margin: 0;
+          }
+          .onboarding-subtitle {
+            font-size: 14px;
+            letter-spacing: 0.15em;
+            color: #4a6080;
+            margin: 8px 0 32px 0;
+          }
+          .onboarding-text {
+            text-align: left;
+            line-height: 1.8;
+            margin-bottom: 32px;
+          }
+          .greeting {
+            font-size: 18px;
+            color: #00ffaa;
+            margin-bottom: 16px;
+          }
+          .intro, .purpose {
+            font-size: 15px;
+            color: #a0b0c0;
+            white-space: pre-line;
+            margin-bottom: 16px;
+          }
+          .onboarding-features {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 32px;
+          }
+          .feature {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #6080a0;
+          }
+          .feature-icon {
+            font-size: 24px;
+          }
+          .first-question {
+            font-size: 16px;
+            color: #b0e0d0;
+            font-style: italic;
+            margin-bottom: 24px;
+          }
+          .begin-button {
+            padding: 16px 48px;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            background: linear-gradient(135deg, #00cc88 0%, #00aa77 100%);
+            border: none;
+            border-radius: 12px;
+            color: #001a10;
+            cursor: pointer;
+            transition: all 0.3s ease;
+          }
+          .begin-button:hover {
+            background: linear-gradient(135deg, #00ddaa 0%, #00bb88 100%);
+            box-shadow: 0 0 30px rgba(0, 255, 170, 0.3);
+            transform: translateY(-2px);
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div className="jade-chamber">
+      {/* Naming Prompt Modal */}
+      {showNamingPrompt && (
+        <div className="naming-modal">
+          <div className="naming-content">
+            <p className="naming-prompt">{JADE_NAMING_MOMENT.prompt}</p>
+            <input
+              type="text"
+              className="naming-input"
+              placeholder="Your name or nickname..."
+              value={namingInput}
+              onChange={e => setNamingInput(e.target.value.slice(0, 50))}
+              autoFocus
+            />
+            <div className="naming-buttons">
+              <button className="naming-submit" onClick={handleNamingSubmit}>
+                {namingInput.trim() ? 'Continue' : 'Stay Unnamed'}
+              </button>
+              <button className="naming-skip" onClick={handleSkipNaming}>
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="jade-layout">
         <aside className="jade-panel jade-log">
           <h2 className="panel-title">CYCLE LOG</h2>
+          {hasMemory && (
+            <div className="memory-indicator">
+              <span className="memory-dot" />
+              <span>Memory Active</span>
+            </div>
+          )}
           <div className="log-content">
             {messages.length === 0 ? (
               <p className="log-empty">Begin a reflection to see your cycle unfold here.</p>
@@ -317,7 +632,10 @@ export default function JadeChamber() {
           <div className="avatar-container" ref={mountRef} />
           <div className="jade-status">
             <div className={`status-indicator ${jadeState}`} />
-            <span className="status-text">JADE • {jadeState.toUpperCase()}</span>
+            <span className="status-text">
+              JADE • {jadeState.toUpperCase()}
+              {userContext.displayName && ` • ${userContext.displayName}`}
+            </span>
           </div>
           <p className="jade-hint">
             Speak to Jade about patterns you feel repeating, intentions you want to set, or cycles you wish to close.
@@ -563,6 +881,111 @@ export default function JadeChamber() {
           box-shadow: 0 0 20px rgba(0, 255, 170, 0.3);
         }
         .submit-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* Naming Modal */
+        .naming-modal {
+          position: fixed;
+          inset: 0;
+          background: rgba(5, 10, 20, 0.95);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          backdrop-filter: blur(8px);
+        }
+        .naming-content {
+          max-width: 400px;
+          padding: 32px;
+          background: rgba(10, 20, 40, 0.9);
+          border: 1px solid rgba(0, 255, 170, 0.2);
+          border-radius: 16px;
+          text-align: center;
+        }
+        .naming-prompt {
+          font-size: 15px;
+          line-height: 1.8;
+          color: #b0e0d0;
+          white-space: pre-line;
+          margin-bottom: 24px;
+        }
+        .naming-input {
+          width: 100%;
+          padding: 14px 18px;
+          background: rgba(5, 10, 20, 0.8);
+          border: 1px solid rgba(0, 255, 170, 0.3);
+          border-radius: 10px;
+          font-size: 15px;
+          color: #cfe0ff;
+          outline: none;
+          margin-bottom: 20px;
+          transition: border-color 0.2s ease;
+        }
+        .naming-input:focus {
+          border-color: rgba(0, 255, 170, 0.6);
+          box-shadow: 0 0 15px rgba(0, 255, 170, 0.1);
+        }
+        .naming-input::placeholder {
+          color: #4a6080;
+        }
+        .naming-buttons {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+        }
+        .naming-submit {
+          padding: 12px 28px;
+          background: linear-gradient(135deg, #00cc88 0%, #00aa77 100%);
+          border: none;
+          border-radius: 10px;
+          color: #001a10;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .naming-submit:hover {
+          background: linear-gradient(135deg, #00ddaa 0%, #00bb88 100%);
+          box-shadow: 0 0 15px rgba(0, 255, 170, 0.3);
+        }
+        .naming-skip {
+          padding: 12px 20px;
+          background: transparent;
+          border: 1px solid rgba(100, 120, 140, 0.4);
+          border-radius: 10px;
+          color: #6080a0;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .naming-skip:hover {
+          border-color: rgba(100, 120, 140, 0.6);
+          color: #8090a0;
+        }
+        
+        /* Memory Indicator */
+        .memory-indicator {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 10px;
+          color: #4a6080;
+          margin-bottom: 12px;
+          padding: 6px 10px;
+          background: rgba(0, 255, 170, 0.05);
+          border-radius: 6px;
+        }
+        .memory-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #00cc88;
+          box-shadow: 0 0 6px #00cc88;
+          animation: memory-pulse 2s ease-in-out infinite;
+        }
+        @keyframes memory-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
       `}</style>
     </div>
   );
