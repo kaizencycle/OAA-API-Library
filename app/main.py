@@ -2,7 +2,30 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from typing import Optional, List
+from datetime import datetime
 import os, time, uuid, re
+
+# Learning Hub imports
+from app.models.learning import (
+    SessionStartRequest,
+    SessionStartResponse,
+    AnswerSubmitRequest,
+    AnswerSubmitResponse,
+    SessionCompleteRequest,
+    SessionCompleteResponse,
+    ModuleListResponse,
+    ModuleDetailResponse,
+    UserProgressResponse,
+    RewardEstimate,
+    SessionStatus,
+    CircuitBreakerStatus,
+)
+from app.services.learning_store import learning_store
+from app.services.mic_minting import MICMintingService
+
+# Initialize services
+mic_service = MICMintingService()
 
 # Default origins include Vercel preview deployments and localhost
 DEFAULT_ORIGINS = [
@@ -850,6 +873,326 @@ async def test_openai():
 
 # --- Root endpoint ---
 
+# =============================================================================
+# LEARNING HUB API ENDPOINTS (C-170 MIC Rewards)
+# =============================================================================
+
+@app.get("/api/learning/modules")
+def list_learning_modules(
+    difficulty: Optional[str] = None,
+    user_id: Optional[str] = None
+):
+    """
+    List all available learning modules.
+    
+    Query Parameters:
+    - difficulty: Filter by difficulty (beginner, intermediate, advanced)
+    - user_id: Include completion status for user
+    """
+    modules = learning_store.get_modules(difficulty=difficulty, user_id=user_id)
+    
+    return ModuleListResponse(
+        modules=modules,
+        total=len(modules),
+        page=1,
+        page_size=len(modules)
+    )
+
+
+@app.get("/api/learning/modules/{module_id}")
+def get_learning_module(module_id: str):
+    """
+    Get detailed module information including questions.
+    """
+    module = learning_store.get_module(module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail=f"Module '{module_id}' not found")
+    return module
+
+
+@app.post("/api/learning/session/start")
+def start_learning_session(req: SessionStartRequest):
+    """
+    Start a new learning session for a module.
+    
+    Returns session details and module questions.
+    """
+    # Check for existing active session
+    existing = learning_store.get_active_session(req.user_id, req.module_id)
+    if existing:
+        # Return existing session instead of creating new one
+        module = learning_store.get_module(req.module_id)
+        return SessionStartResponse(
+            session_id=existing["id"],
+            module_id=existing["module_id"],
+            start_time=datetime.fromisoformat(existing["started_at"]),
+            status=SessionStatus.ACTIVE,
+            module=module
+        )
+    
+    # Create new session
+    session = learning_store.create_session(req.user_id, req.module_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Module '{req.module_id}' not found")
+    
+    module = learning_store.get_module(req.module_id)
+    
+    return SessionStartResponse(
+        session_id=session["id"],
+        module_id=session["module_id"],
+        start_time=datetime.fromisoformat(session["started_at"]),
+        status=SessionStatus.ACTIVE,
+        module=module
+    )
+
+
+@app.post("/api/learning/session/{session_id}/answer")
+def submit_answer(session_id: str, req: AnswerSubmitRequest):
+    """
+    Submit an answer for a quiz question.
+    
+    Returns correctness, explanation, and current score.
+    """
+    result = learning_store.submit_answer(
+        session_id=session_id,
+        question_id=req.question_id,
+        selected_answer=req.selected_answer
+    )
+    
+    if not result:
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid session, question, or answer already submitted"
+        )
+    
+    return AnswerSubmitResponse(
+        question_id=result["question_id"],
+        correct=result["correct"],
+        points_earned=result["points_earned"],
+        explanation=result["explanation"],
+        cumulative_score=result["cumulative_score"],
+        questions_remaining=result["questions_remaining"]
+    )
+
+
+@app.post("/api/learning/session/{session_id}/complete")
+async def complete_learning_session(session_id: str, req: SessionCompleteRequest):
+    """
+    Complete a learning session and mint MIC rewards.
+    
+    Calculates rewards based on:
+    - Base module reward
+    - Accuracy (min 70%)
+    - User integrity score
+    - Global Integrity Index (circuit breaker)
+    - Streak bonuses
+    """
+    session = learning_store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session["status"] != "active":
+        raise HTTPException(status_code=400, detail="Session already completed")
+    
+    module = learning_store.get_module(session["module_id"])
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    
+    user_id = session["user_id"]
+    module_id = session["module_id"]
+    
+    # Check if already completed
+    is_first_completion = not learning_store.has_completed_module(user_id, module_id)
+    
+    # Get user progress for streak info
+    progress = learning_store.get_user_progress(user_id)
+    
+    # Calculate MIC reward
+    reward_result = mic_service.calculate_reward(
+        base_reward=module.mic_reward,
+        accuracy=req.accuracy,
+        integrity_score=progress.get("integrity_score", 0.85),
+        difficulty=module.difficulty.value,
+        streak_days=progress.get("current_streak", 0),
+        is_perfect_score=req.accuracy >= 1.0,
+        is_first_completion=is_first_completion
+    )
+    
+    if not reward_result["can_mint"]:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Cannot mint reward: {reward_result.get('reason', 'Unknown')}"
+        )
+    
+    mic_earned = reward_result["mic_earned"]
+    
+    # Mint the reward
+    try:
+        mint_result = await mic_service.mint_reward(
+            user_id=user_id,
+            module_id=module_id,
+            session_id=session_id,
+            mic_amount=mic_earned,
+            accuracy=req.accuracy,
+            integrity_score=progress.get("integrity_score", 0.85)
+        )
+        transaction_id = mint_result["transaction_id"]
+    except ValueError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    
+    # Complete the session
+    learning_store.complete_session(session_id)
+    
+    # Calculate XP
+    xp_earned = learning_store.calculate_xp(
+        accuracy=req.accuracy,
+        difficulty=module.difficulty.value,
+        time_minutes=req.time_spent_minutes
+    )
+    
+    # Update user progress
+    updated_progress = learning_store.update_user_progress(
+        user_id=user_id,
+        mic_earned=mic_earned,
+        xp_earned=xp_earned,
+        minutes_spent=req.time_spent_minutes
+    )
+    
+    # Record completion
+    learning_store.record_completion(
+        user_id=user_id,
+        module_id=module_id,
+        accuracy=req.accuracy,
+        mic_earned=mic_earned
+    )
+    
+    # Check for badges
+    new_badges = learning_store.check_and_award_badges(
+        user_id=user_id,
+        module_id=module_id,
+        accuracy=req.accuracy,
+        is_first_module=updated_progress["modules_completed"] == 1
+    )
+    
+    return SessionCompleteResponse(
+        session_id=session_id,
+        module_id=module_id,
+        accuracy=req.accuracy,
+        mic_earned=mic_earned,
+        xp_earned=xp_earned,
+        new_level=updated_progress["level"],
+        integrity_score=updated_progress.get("integrity_score", 0.85),
+        transaction_id=transaction_id,
+        status=SessionStatus.COMPLETED,
+        rewards={
+            "mic": mic_earned,
+            "xp": xp_earned,
+            "badges": len(new_badges)
+        },
+        bonuses=reward_result["breakdown"],
+        circuit_breaker_status=CircuitBreakerStatus(reward_result["system_status"])
+    )
+
+
+@app.get("/api/learning/users/{user_id}/progress")
+def get_user_learning_progress(user_id: str):
+    """
+    Get comprehensive learning progress for a user.
+    
+    Returns:
+    - Total MIC earned
+    - Modules completed
+    - Current streak
+    - Level and XP
+    - Badges earned
+    - Completed modules list
+    """
+    progress = learning_store.get_user_progress(user_id)
+    completed_modules = learning_store.get_completed_modules(user_id)
+    badges = learning_store.get_user_badges(user_id)
+    next_level_xp = learning_store.get_next_level_xp(progress["level"])
+    
+    return UserProgressResponse(
+        user_id=user_id,
+        total_mic_earned=progress["total_mic_earned"],
+        modules_completed=progress["modules_completed"],
+        current_streak=progress["current_streak"],
+        longest_streak=progress["longest_streak"],
+        total_learning_minutes=progress["total_learning_minutes"],
+        level=progress["level"],
+        experience_points=progress["experience_points"],
+        next_level_xp=next_level_xp,
+        integrity_score=progress.get("integrity_score", 0.85),
+        badges=badges,
+        completed_modules=completed_modules
+    )
+
+
+@app.get("/api/learning/estimate-reward")
+def estimate_learning_reward(
+    module_id: str,
+    user_id: str,
+    expected_accuracy: float = 0.85
+):
+    """
+    Estimate potential MIC reward before starting a module.
+    
+    Useful for displaying expected rewards in the UI.
+    """
+    module = learning_store.get_module(module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail=f"Module '{module_id}' not found")
+    
+    progress = learning_store.get_user_progress(user_id)
+    
+    estimate = mic_service.estimate_reward(
+        base_reward=module.mic_reward,
+        expected_accuracy=expected_accuracy,
+        user_id=user_id,
+        difficulty=module.difficulty.value,
+        streak_days=progress.get("current_streak", 0)
+    )
+    
+    return RewardEstimate(
+        estimated_mic=estimate["estimated_mic"],
+        breakdown=estimate["breakdown"],
+        system_status=CircuitBreakerStatus(estimate["system_status"]),
+        can_mint=estimate["can_mint"],
+        gii_multiplier=estimate["gii_multiplier"]
+    )
+
+
+@app.get("/api/learning/system-status")
+def get_learning_system_status():
+    """
+    Get current system status including circuit breaker state.
+    
+    Returns:
+    - Global Integrity Index (GII)
+    - Circuit breaker status
+    - Minting availability
+    """
+    gii = mic_service.get_global_integrity_index()
+    gii_multiplier, status = mic_service.calculate_gii_multiplier(gii)
+    
+    return {
+        "global_integrity_index": gii,
+        "circuit_breaker_status": status,
+        "gii_multiplier": gii_multiplier,
+        "minting_enabled": gii >= MICMintingService.MIN_GII_FOR_MINTING,
+        "thresholds": {
+            "healthy": 0.90,
+            "warning": 0.75,
+            "critical": 0.60,
+            "circuit_breaker": 0.60
+        }
+    }
+
+
+# =============================================================================
+# ROOT ENDPOINT
+# =============================================================================
+
 @app.get("/")
 def root():
     """
@@ -860,7 +1203,7 @@ def root():
     
     return {
         "service": "OAA API Library",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "status": "ready" if (has_anthropic or has_openai) else "limited",
         "ai_providers": {
             "anthropic": "configured" if has_anthropic else "not_configured",
@@ -872,6 +1215,12 @@ def root():
             "tutor_providers": {"path": "/api/tutor/providers", "method": "GET"},
             "tutor_subjects": {"path": "/api/tutor/subjects", "method": "GET"},
             "jade": {"path": "/api/jade", "method": "POST", "info_method": "GET", "description": "JADE Pattern Oracle"},
+            "learning_modules": {"path": "/api/learning/modules", "method": "GET", "description": "List learning modules"},
+            "learning_session_start": {"path": "/api/learning/session/start", "method": "POST", "description": "Start learning session"},
+            "learning_session_complete": {"path": "/api/learning/session/{id}/complete", "method": "POST", "description": "Complete session & mint MIC"},
+            "learning_progress": {"path": "/api/learning/users/{id}/progress", "method": "GET", "description": "Get user progress"},
+            "learning_estimate": {"path": "/api/learning/estimate-reward", "method": "GET", "description": "Estimate MIC reward"},
+            "learning_status": {"path": "/api/learning/system-status", "method": "GET", "description": "System & circuit breaker status"},
             "debug_anthropic": {"path": "/api/debug/test-anthropic", "method": "GET"},
             "debug_openai": {"path": "/api/debug/test-openai", "method": "GET"},
             "agents_register": {"path": "/agents/register", "method": "POST"},
