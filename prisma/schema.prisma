@@ -1,0 +1,204 @@
+// Prisma Schema for OAA Auth + MIC Wallet System
+// This schema integrates identity, authentication, and wallet management
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & IDENTITY
+// ============================================
+
+model User {
+  id        String   @id @default(uuid())
+  handle    String   @unique
+  email     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Auth relationships
+  authKeys   AuthKey[]
+  sessions   Session[]
+  magicLinks MagicLink[]
+
+  // Wallet relationship (one-to-one)
+  micWallet MICWallet?
+
+  // Ledger entries
+  micLedgerEntries MICLedger[]
+
+  // Identity events
+  identityEvents IdentityEvent[]
+
+  @@index([handle])
+  @@index([email])
+}
+
+// ============================================
+// AUTHENTICATION
+// ============================================
+
+// Authentication methods (password, passkey, etc.)
+model AuthKey {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         AuthType
+  passwordHash String?  // For PASSWORD type
+  
+  // Passkey fields (for PASSKEY type)
+  credentialId       String?  @unique
+  publicKey          String?
+  counter            Int      @default(0)
+  transports         String[] // e.g., ["usb", "nfc", "ble", "internal"]
+  authenticatorAAGUID String?
+  
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+  @@index([credentialId])
+}
+
+enum AuthType {
+  PASSWORD
+  PASSKEY
+  OAUTH_GOOGLE
+  OAUTH_GITHUB
+}
+
+// Session management
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique // SHA256 of session token
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+// Magic links for passwordless login
+model MagicLink {
+  id        String   @id @default(uuid())
+  email     String
+  tokenHash String   @unique // SHA256 of token
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  userId    String?  // Set after verification
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([email])
+  @@index([tokenHash])
+}
+
+// ============================================
+// MIC WALLET SYSTEM
+// ============================================
+
+// MIC (Mobius Integrity Coin) Wallet
+model MICWallet {
+  id         String     @id @default(uuid())
+  userId     String     @unique
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address    String     @unique // 0x + 40 hex chars (derived from pubkey hash)
+  publicKey  String     // Ed25519 public key (hex)
+  walletType WalletType
+  metadata   Json?      // Additional wallet info
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([address])
+  @@index([publicKey])
+}
+
+enum WalletType {
+  CUSTODIAL    // Mobius manages keys
+  SELF_CUSTODY // User manages keys
+  FOUNDER      // Special founder wallet
+}
+
+// MIC Ledger - Source of truth for all MIC balances
+model MICLedger {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  walletAddress  String
+  amount         Decimal   @db.Decimal(20, 8) // Supports micro-MIC
+  reason         MICReason
+  integrityScore Decimal   @db.Decimal(5, 4) // 0.0000 to 1.0000
+  gii            Decimal?  @db.Decimal(5, 4) // Global Integrity Index at time
+  moduleId       String?   // If earned from learning module
+  sessionId      String?   // If earned from learning session
+  merkleRoot     String?   // Merkle root when anchored
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId])
+  @@index([walletAddress])
+  @@index([reason])
+  @@index([createdAt])
+}
+
+enum MICReason {
+  REWARD           // Learning reward
+  BONUS            // Achievement bonus
+  TRANSFER_IN      // Received from another wallet
+  TRANSFER_OUT     // Sent to another wallet (negative)
+  STAKE            // Staked for governance
+  UNSTAKE          // Unstaked
+  BURN             // Permanently destroyed
+  MINT             // Initial minting (founder only)
+  UBI              // Universal Basic Integrity
+}
+
+// ============================================
+// IDENTITY EVENTS (Audit Trail)
+// ============================================
+
+model IdentityEvent {
+  id           String          @id @default(uuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id])
+  eventType    IdentityEventType
+  eventPayload Json
+  eventHash    String          // SHA256 of payload
+  prevHash     String?         // Hash of previous event (chain)
+  merkleRoot   String?         // When anchored to blockchain
+  createdAt    DateTime        @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([eventHash])
+}
+
+enum IdentityEventType {
+  REGISTERED
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  PASSWORD_CHANGED
+  PASSKEY_ADDED
+  PASSKEY_REMOVED
+  EMAIL_VERIFIED
+  MAGIC_LINK_SENT
+  MAGIC_LINK_USED
+  WALLET_CREATED
+  MIC_EARNED
+  MIC_TRANSFERRED
+  SESSION_CREATED
+  SESSION_REVOKED
+}
