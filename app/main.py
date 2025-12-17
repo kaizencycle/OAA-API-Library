@@ -20,9 +20,15 @@ from app.models.learning import (
     RewardEstimate,
     SessionStatus,
     CircuitBreakerStatus,
+    # MIC Wallet schemas
+    MICReason,
+    MICLedgerEntry,
+    WalletBalanceResponse,
+    WalletLedgerResponse,
 )
 from app.services.learning_store import learning_store
 from app.services.mic_minting import MICMintingService
+from app.services.mic_ledger_store import mic_ledger_store
 
 # Initialize services
 mic_service = MICMintingService()
@@ -1074,6 +1080,9 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
         is_first_module=updated_progress["modules_completed"] == 1
     )
     
+    # Get new wallet balance from ledger (DERIVED, never stored)
+    new_wallet_balance = mic_ledger_store.get_balance(user_id)
+    
     return SessionCompleteResponse(
         session_id=session_id,
         module_id=module_id,
@@ -1083,6 +1092,8 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
         new_level=updated_progress["level"],
         integrity_score=updated_progress.get("integrity_score", 0.85),
         transaction_id=transaction_id,
+        ledger_id=mint_result.get("ledger_id"),  # Proof of earning
+        new_wallet_balance=new_wallet_balance,  # Derived from ledger
         status=SessionStatus.COMPLETED,
         rewards={
             "mic": mic_earned,
@@ -1190,6 +1201,146 @@ def get_learning_system_status():
 
 
 # =============================================================================
+# MIC WALLET API ENDPOINTS (C-151 MIC Ledger & Wallet Sync)
+# =============================================================================
+
+@app.get("/api/v1/wallet/balance")
+def get_wallet_balance(user_id: str):
+    """
+    Get user's MIC wallet balance.
+    
+    CRITICAL: Balance is DERIVED from the ledger, never stored separately.
+    This ensures integrity and auditability of all MIC transactions.
+    
+    Query Parameters:
+    - user_id: User ID to get balance for
+    
+    Returns:
+    - balance: Total MIC balance (sum of all ledger entries)
+    - last_updated: Timestamp of last transaction
+    - recent_events: Last 10 ledger entries
+    """
+    # Get derived balance from ledger
+    balance = mic_ledger_store.get_balance(user_id)
+    
+    # Get recent entries
+    recent_entries = mic_ledger_store.get_recent_entries(user_id, limit=10)
+    
+    # Get last entry for timestamp
+    last_entry = mic_ledger_store.get_last_entry(user_id)
+    last_updated = last_entry.created_at if last_entry else None
+    
+    # Format recent events for response
+    recent_events = [
+        {
+            "id": entry.id,
+            "amount": entry.amount,
+            "reason": entry.reason.value,
+            "module_id": entry.module_id,
+            "integrity_score": entry.integrity_score,
+            "timestamp": entry.created_at.isoformat()
+        }
+        for entry in recent_entries
+    ]
+    
+    return WalletBalanceResponse(
+        user_id=user_id,
+        balance=balance,
+        last_updated=last_updated,
+        recent_events=recent_events
+    )
+
+
+@app.get("/api/v1/wallet/ledger")
+def get_wallet_ledger(
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    Get full MIC ledger history for a user.
+    
+    The ledger is append-only and auditable - entries are never modified.
+    
+    Query Parameters:
+    - user_id: User ID to get ledger for
+    - limit: Number of entries to return (default 50, max 100)
+    - offset: Pagination offset
+    
+    Returns:
+    - total_entries: Total number of ledger entries
+    - entries: List of ledger entries (most recent first)
+    """
+    # Cap limit at 100
+    limit = min(limit, 100)
+    
+    total, entries = mic_ledger_store.get_ledger(user_id, limit=limit, offset=offset)
+    
+    return WalletLedgerResponse(
+        user_id=user_id,
+        total_entries=total,
+        entries=entries
+    )
+
+
+@app.get("/api/v1/wallet/breakdown")
+def get_wallet_breakdown(user_id: str):
+    """
+    Get MIC balance breakdown by transaction type.
+    
+    Shows how much MIC was earned through each channel:
+    - LEARN: Learning module completions
+    - EARN: Other earning activities
+    - BONUS: Streak and achievement bonuses
+    - CORRECTION: Manual adjustments
+    
+    Query Parameters:
+    - user_id: User ID to get breakdown for
+    
+    Returns:
+    - Breakdown by reason type
+    - Total balance
+    """
+    breakdown = mic_ledger_store.get_balance_breakdown(user_id)
+    
+    return {
+        "user_id": user_id,
+        "breakdown": breakdown,
+        "balance": breakdown.get("total", 0.0)
+    }
+
+
+@app.options("/api/v1/wallet/balance")
+def wallet_balance_options():
+    """CORS preflight for wallet balance endpoint."""
+    return JSONResponse(
+        content={},
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
+
+@app.options("/api/v1/wallet/ledger")
+def wallet_ledger_options():
+    """CORS preflight for wallet ledger endpoint."""
+    return JSONResponse(
+        content={},
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
+
+# =============================================================================
 # ROOT ENDPOINT
 # =============================================================================
 
@@ -1221,6 +1372,9 @@ def root():
             "learning_progress": {"path": "/api/learning/users/{id}/progress", "method": "GET", "description": "Get user progress"},
             "learning_estimate": {"path": "/api/learning/estimate-reward", "method": "GET", "description": "Estimate MIC reward"},
             "learning_status": {"path": "/api/learning/system-status", "method": "GET", "description": "System & circuit breaker status"},
+            "wallet_balance": {"path": "/api/v1/wallet/balance", "method": "GET", "description": "Get MIC wallet balance (derived from ledger)"},
+            "wallet_ledger": {"path": "/api/v1/wallet/ledger", "method": "GET", "description": "Get full MIC transaction history"},
+            "wallet_breakdown": {"path": "/api/v1/wallet/breakdown", "method": "GET", "description": "Get MIC balance breakdown by type"},
             "debug_anthropic": {"path": "/api/debug/test-anthropic", "method": "GET"},
             "debug_openai": {"path": "/api/debug/test-openai", "method": "GET"},
             "agents_register": {"path": "/agents/register", "method": "POST"},
