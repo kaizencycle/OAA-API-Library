@@ -29,6 +29,57 @@ class CircuitBreakerStatus(str, Enum):
     CIRCUIT_BREAKER_ACTIVE = "circuit_breaker_active"
 
 
+# =============================================================================
+# MIC LEDGER SCHEMAS (Append-only ledger for wallet tracking)
+# =============================================================================
+
+class MICReason(str, Enum):
+    """Reason for MIC transaction - determines source of MIC credit"""
+    LEARN = "LEARN"           # Earned through learning module completion
+    EARN = "EARN"             # Earned through other activities
+    CORRECTION = "CORRECTION"  # Manual correction (can be positive or negative)
+    BONUS = "BONUS"           # Bonus reward (streak, achievement, etc.)
+
+
+class MICLedgerEntry(BaseModel):
+    """Single entry in the append-only MIC ledger"""
+    id: str = Field(..., description="Unique ledger entry ID")
+    user_id: str = Field(..., description="User who earned/spent the MIC")
+    amount: float = Field(..., description="MIC amount (positive for credit, negative for debit)")
+    reason: MICReason = Field(..., description="Reason for the transaction")
+    integrity_score: float = Field(..., ge=0.0, le=1.0, description="User's integrity score at time of transaction")
+    gii: Optional[float] = Field(None, ge=0.0, le=1.0, description="Global Integrity Index at time of transaction")
+    module_id: Optional[str] = Field(None, description="Associated learning module (if LEARN reason)")
+    session_id: Optional[str] = Field(None, description="Associated session (if applicable)")
+    transaction_id: Optional[str] = Field(None, description="External transaction ID")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional context")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Timestamp of transaction")
+    
+    class Config:
+        from_attributes = True
+
+
+class WalletBalanceResponse(BaseModel):
+    """Response for wallet balance query - balance is DERIVED from ledger"""
+    user_id: str
+    balance: float = Field(..., description="Total MIC balance (sum of all ledger entries)")
+    last_updated: Optional[datetime] = Field(None, description="Timestamp of last transaction")
+    recent_events: List[Dict[str, Any]] = Field(default_factory=list, description="Recent ledger entries")
+    
+    class Config:
+        from_attributes = True
+
+
+class WalletLedgerResponse(BaseModel):
+    """Response for full ledger query - append-only, auditable"""
+    user_id: str
+    total_entries: int
+    entries: List[MICLedgerEntry]
+    
+    class Config:
+        from_attributes = True
+
+
 # Question Schema
 # ================
 
@@ -167,6 +218,8 @@ class SessionCompleteResponse(BaseModel):
     new_level: int
     integrity_score: float
     transaction_id: Optional[str] = None
+    ledger_id: Optional[str] = None  # MIC Ledger entry ID (proof of earning)
+    new_wallet_balance: Optional[float] = None  # Updated wallet balance from ledger
     status: SessionStatus
     rewards: Dict[str, int]
     bonuses: Dict[str, float]

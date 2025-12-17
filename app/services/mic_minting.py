@@ -2,6 +2,9 @@
 """
 MIC Minting Service for Learning Rewards
 Handles the minting of Mobius Integrity Credits based on learning achievements
+
+CRITICAL: All MIC rewards are written to the MIC Ledger (append-only).
+The wallet balance is DERIVED from the ledger, never stored separately.
 """
 
 import logging
@@ -9,6 +12,9 @@ import os
 from typing import Dict, Any, Tuple
 from datetime import datetime
 import uuid
+
+from app.models.learning import MICReason
+from app.services.mic_ledger_store import mic_ledger_store
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +202,10 @@ class MICMintingService:
         integrity_score: float
     ) -> Dict[str, Any]:
         """
-        Mint MIC reward for completing a learning module
+        Mint MIC reward for completing a learning module.
+        
+        CRITICAL: This method writes to the MIC Ledger (append-only).
+        The wallet balance is DERIVED from the ledger.
         
         Args:
             user_id: User receiving the reward
@@ -207,7 +216,7 @@ class MICMintingService:
             integrity_score: User's integrity score
             
         Returns:
-            Transaction details
+            Transaction details including ledger entry and new balance
         """
         gii = self.get_global_integrity_index()
         gii_multiplier, system_status = self.calculate_gii_multiplier(gii)
@@ -225,21 +234,40 @@ class MICMintingService:
         # Generate transaction ID
         transaction_id = f"tx_mic_{uuid.uuid4().hex[:12]}_{int(datetime.utcnow().timestamp())}"
         
-        # TODO: Actual blockchain/ledger integration
-        # For now, simulate the mint
+        # 🔥 CRITICAL: Write to MIC Ledger (append-only)
+        # This is the source of truth for wallet balance
+        ledger_entry = mic_ledger_store.append_entry(
+            user_id=user_id,
+            amount=float(mic_amount),
+            reason=MICReason.LEARN,
+            integrity_score=integrity_score,
+            gii=gii,
+            module_id=module_id,
+            session_id=session_id,
+            transaction_id=transaction_id,
+            metadata={
+                "accuracy": accuracy,
+                "gii_multiplier": gii_multiplier,
+                "system_status": system_status
+            }
+        )
+        
+        # Get DERIVED balance from ledger (never stored separately)
+        new_balance = mic_ledger_store.get_balance(user_id)
         
         logger.info(
-            f"MIC minted: user={user_id}, amount={mic_amount}, "
-            f"module={module_id}, tx={transaction_id}"
+            f"MIC minted to ledger: user={user_id}, amount={mic_amount}, "
+            f"module={module_id}, tx={transaction_id}, new_balance={new_balance}"
         )
         
         return {
             "transaction_id": transaction_id,
+            "ledger_id": ledger_entry.id,
             "user_id": user_id,
             "module_id": module_id,
             "session_id": session_id,
             "mic_minted": mic_amount,
-            "new_balance": mic_amount,  # TODO: Get actual balance
+            "new_balance": new_balance,  # Derived from ledger
             "integrity_score_used": integrity_score,
             "circuit_breaker_status": system_status,
             "global_integrity_index": gii,
