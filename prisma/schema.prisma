@@ -202,3 +202,30 @@ enum IdentityEventType {
   SESSION_CREATED
   SESSION_REVOKED
 }
+
+// ============================================
+// RECEIPTS (Hash receipts for verifiable transactions)
+// ============================================
+
+// Receipt for verifiable transaction records
+// Can be anchored to Merkle trees / blockchain for proof
+model Receipt {
+  id        String      @id @default(uuid())
+  kind      ReceiptKind
+  subjectId String      // User ID (canonical identity)
+  payload   Json        // Full transaction payload
+  sha256    String      @unique // SHA256 of canonical JSON payload
+  merkleRoot String?    // When anchored to Merkle tree
+  createdAt DateTime    @default(now())
+
+  @@index([subjectId])
+  @@index([kind])
+  @@index([createdAt])
+}
+
+enum ReceiptKind {
+  LEARN_MINT    // MIC minted from learning completion
+  BONUS_MINT    // Bonus MIC (streak, achievement)
+  TRANSFER      // MIC transfer between wallets
+  CORRECTION    // Manual correction
+}

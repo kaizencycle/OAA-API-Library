@@ -1,10 +1,14 @@
 # app/main.py
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 import os, time, uuid, re
+
+# Auth imports
+from app.auth import require_auth, optional_auth, AuthedRequest
+from app.receipts import create_mint_receipt, MintReceipt
 
 # Learning Hub imports
 from app.models.learning import (
@@ -880,6 +884,42 @@ async def test_openai():
 # --- Root endpoint ---
 
 # =============================================================================
+# AUTH API ENDPOINTS (Hybrid Auth - JWT verification)
+# =============================================================================
+
+@app.get("/api/auth/me")
+async def get_current_user_info(auth: AuthedRequest = Depends(require_auth)):
+    """
+    Get current authenticated user information.
+    
+    Requires: Bearer token in Authorization header
+    Returns: User ID, handle, email, wallet address
+    """
+    return {
+        "id": auth.user_id,
+        "handle": auth.handle,
+        "email": auth.email,
+        "wallet_address": auth.wallet_address,
+        "subject_id": auth.user_id  # Canonical identity
+    }
+
+
+@app.options("/api/auth/me")
+def auth_me_options():
+    """CORS preflight for auth/me endpoint."""
+    return JSONResponse(
+        content={},
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+            "Access-Control-Max-Age": "86400"
+        }
+    )
+
+
+# =============================================================================
 # LEARNING HUB API ENDPOINTS (C-170 MIC Rewards)
 # =============================================================================
 
@@ -982,9 +1022,16 @@ def submit_answer(session_id: str, req: AnswerSubmitRequest):
 
 
 @app.post("/api/learning/session/{session_id}/complete")
-async def complete_learning_session(session_id: str, req: SessionCompleteRequest):
+async def complete_learning_session(
+    session_id: str, 
+    req: SessionCompleteRequest,
+    auth: Optional[AuthedRequest] = Depends(optional_auth)
+):
     """
     Complete a learning session and mint MIC rewards.
+    
+    🔐 SUBJECT BINDING: When authenticated, MIC is minted to the authenticated
+    user's wallet (subject_id). This ensures MIC always has a verifiable owner.
     
     Calculates rewards based on:
     - Base module reward
@@ -992,6 +1039,8 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
     - User integrity score
     - Global Integrity Index (circuit breaker)
     - Streak bonuses
+    
+    Returns a hash receipt for verifiable proof of the mint transaction.
     """
     session = learning_store.get_session(session_id)
     if not session:
@@ -1004,20 +1053,27 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
     
-    user_id = session["user_id"]
+    # 🔐 SUBJECT BINDING: Use authenticated user_id if available
+    # This is the canonical subject_id - the identity spine for MIC ownership
+    if auth:
+        subject_id = auth.user_id  # Canonical identity from JWT
+    else:
+        subject_id = session["user_id"]  # Fallback for backward compatibility
+    
     module_id = session["module_id"]
     
     # Check if already completed
-    is_first_completion = not learning_store.has_completed_module(user_id, module_id)
+    is_first_completion = not learning_store.has_completed_module(subject_id, module_id)
     
     # Get user progress for streak info
-    progress = learning_store.get_user_progress(user_id)
+    progress = learning_store.get_user_progress(subject_id)
+    integrity_score = progress.get("integrity_score", 0.85)
     
     # Calculate MIC reward
     reward_result = mic_service.calculate_reward(
         base_reward=module.mic_reward,
         accuracy=req.accuracy,
-        integrity_score=progress.get("integrity_score", 0.85),
+        integrity_score=integrity_score,
         difficulty=module.difficulty.value,
         streak_days=progress.get("current_streak", 0),
         is_perfect_score=req.accuracy >= 1.0,
@@ -1031,16 +1087,28 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
         )
     
     mic_earned = reward_result["mic_earned"]
+    gii = reward_result.get("gii", 0.92)
     
-    # Mint the reward
+    # 🧾 Generate hash receipt BEFORE minting for verifiable proof
+    receipt = create_mint_receipt(
+        subject_id=subject_id,
+        session_id=session_id,
+        module_id=module_id,
+        minted_mic=mic_earned,
+        accuracy=req.accuracy,
+        integrity_score=integrity_score,
+        gii=gii
+    )
+    
+    # Mint the reward to subject_id
     try:
         mint_result = await mic_service.mint_reward(
-            user_id=user_id,
+            user_id=subject_id,  # Canonical subject_id
             module_id=module_id,
             session_id=session_id,
             mic_amount=mic_earned,
             accuracy=req.accuracy,
-            integrity_score=progress.get("integrity_score", 0.85)
+            integrity_score=integrity_score
         )
         transaction_id = mint_result["transaction_id"]
     except ValueError as e:
@@ -1058,7 +1126,7 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
     
     # Update user progress
     updated_progress = learning_store.update_user_progress(
-        user_id=user_id,
+        user_id=subject_id,
         mic_earned=mic_earned,
         xp_earned=xp_earned,
         minutes_spent=req.time_spent_minutes
@@ -1066,7 +1134,7 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
     
     # Record completion
     learning_store.record_completion(
-        user_id=user_id,
+        user_id=subject_id,
         module_id=module_id,
         accuracy=req.accuracy,
         mic_earned=mic_earned
@@ -1074,14 +1142,14 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
     
     # Check for badges
     new_badges = learning_store.check_and_award_badges(
-        user_id=user_id,
+        user_id=subject_id,
         module_id=module_id,
         accuracy=req.accuracy,
         is_first_module=updated_progress["modules_completed"] == 1
     )
     
     # Get new wallet balance from ledger (DERIVED, never stored)
-    new_wallet_balance = mic_ledger_store.get_balance(user_id)
+    new_wallet_balance = mic_ledger_store.get_balance(subject_id)
     
     return SessionCompleteResponse(
         session_id=session_id,
@@ -1098,7 +1166,8 @@ async def complete_learning_session(session_id: str, req: SessionCompleteRequest
         rewards={
             "mic": mic_earned,
             "xp": xp_earned,
-            "badges": len(new_badges)
+            "badges": len(new_badges),
+            "receipt_hash": receipt.receipt_hash  # 🧾 Hash receipt for verification
         },
         bonuses=reward_result["breakdown"],
         circuit_breaker_status=CircuitBreakerStatus(reward_result["system_status"])
@@ -1205,29 +1274,46 @@ def get_learning_system_status():
 # =============================================================================
 
 @app.get("/api/v1/wallet/balance")
-def get_wallet_balance(user_id: str):
+async def get_wallet_balance(
+    user_id: Optional[str] = None,
+    auth: Optional[AuthedRequest] = Depends(optional_auth)
+):
     """
     Get user's MIC wallet balance.
+    
+    🔐 AUTHENTICATION: When authenticated via Bearer token, returns the
+    authenticated user's balance. user_id parameter is ignored when authenticated.
     
     CRITICAL: Balance is DERIVED from the ledger, never stored separately.
     This ensures integrity and auditability of all MIC transactions.
     
     Query Parameters:
-    - user_id: User ID to get balance for
+    - user_id: User ID to get balance for (ignored if authenticated)
     
     Returns:
     - balance: Total MIC balance (sum of all ledger entries)
     - last_updated: Timestamp of last transaction
     - recent_events: Last 10 ledger entries
     """
+    # 🔐 SUBJECT BINDING: Prefer authenticated user_id
+    if auth:
+        subject_id = auth.user_id  # Canonical identity from JWT
+    elif user_id:
+        subject_id = user_id  # Fallback for backward compatibility
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either authenticate via Bearer token or provide user_id parameter"
+        )
+    
     # Get derived balance from ledger
-    balance = mic_ledger_store.get_balance(user_id)
+    balance = mic_ledger_store.get_balance(subject_id)
     
     # Get recent entries
-    recent_entries = mic_ledger_store.get_recent_entries(user_id, limit=10)
+    recent_entries = mic_ledger_store.get_recent_entries(subject_id, limit=10)
     
     # Get last entry for timestamp
-    last_entry = mic_ledger_store.get_last_entry(user_id)
+    last_entry = mic_ledger_store.get_last_entry(subject_id)
     last_updated = last_entry.created_at if last_entry else None
     
     # Format recent events for response
@@ -1244,7 +1330,7 @@ def get_wallet_balance(user_id: str):
     ]
     
     return WalletBalanceResponse(
-        user_id=user_id,
+        user_id=subject_id,
         balance=balance,
         last_updated=last_updated,
         recent_events=recent_events
@@ -1252,18 +1338,22 @@ def get_wallet_balance(user_id: str):
 
 
 @app.get("/api/v1/wallet/ledger")
-def get_wallet_ledger(
-    user_id: str,
+async def get_wallet_ledger(
+    user_id: Optional[str] = None,
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    auth: Optional[AuthedRequest] = Depends(optional_auth)
 ):
     """
     Get full MIC ledger history for a user.
     
+    🔐 AUTHENTICATION: When authenticated via Bearer token, returns the
+    authenticated user's ledger. user_id parameter is ignored when authenticated.
+    
     The ledger is append-only and auditable - entries are never modified.
     
     Query Parameters:
-    - user_id: User ID to get ledger for
+    - user_id: User ID to get ledger for (ignored if authenticated)
     - limit: Number of entries to return (default 50, max 100)
     - offset: Pagination offset
     
@@ -1271,22 +1361,39 @@ def get_wallet_ledger(
     - total_entries: Total number of ledger entries
     - entries: List of ledger entries (most recent first)
     """
+    # 🔐 SUBJECT BINDING: Prefer authenticated user_id
+    if auth:
+        subject_id = auth.user_id  # Canonical identity from JWT
+    elif user_id:
+        subject_id = user_id  # Fallback for backward compatibility
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either authenticate via Bearer token or provide user_id parameter"
+        )
+    
     # Cap limit at 100
     limit = min(limit, 100)
     
-    total, entries = mic_ledger_store.get_ledger(user_id, limit=limit, offset=offset)
+    total, entries = mic_ledger_store.get_ledger(subject_id, limit=limit, offset=offset)
     
     return WalletLedgerResponse(
-        user_id=user_id,
+        user_id=subject_id,
         total_entries=total,
         entries=entries
     )
 
 
 @app.get("/api/v1/wallet/breakdown")
-def get_wallet_breakdown(user_id: str):
+async def get_wallet_breakdown(
+    user_id: Optional[str] = None,
+    auth: Optional[AuthedRequest] = Depends(optional_auth)
+):
     """
     Get MIC balance breakdown by transaction type.
+    
+    🔐 AUTHENTICATION: When authenticated via Bearer token, returns the
+    authenticated user's breakdown. user_id parameter is ignored when authenticated.
     
     Shows how much MIC was earned through each channel:
     - LEARN: Learning module completions
@@ -1295,16 +1402,27 @@ def get_wallet_breakdown(user_id: str):
     - CORRECTION: Manual adjustments
     
     Query Parameters:
-    - user_id: User ID to get breakdown for
+    - user_id: User ID to get breakdown for (ignored if authenticated)
     
     Returns:
     - Breakdown by reason type
     - Total balance
     """
-    breakdown = mic_ledger_store.get_balance_breakdown(user_id)
+    # 🔐 SUBJECT BINDING: Prefer authenticated user_id
+    if auth:
+        subject_id = auth.user_id  # Canonical identity from JWT
+    elif user_id:
+        subject_id = user_id  # Fallback for backward compatibility
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either authenticate via Bearer token or provide user_id parameter"
+        )
+    
+    breakdown = mic_ledger_store.get_balance_breakdown(subject_id)
     
     return {
-        "user_id": user_id,
+        "user_id": subject_id,
         "breakdown": breakdown,
         "balance": breakdown.get("total", 0.0)
     }
@@ -1351,32 +1469,49 @@ def root():
     """
     has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    has_jwt_secret = bool(os.getenv("JWT_SECRET"))
     
     return {
         "service": "OAA API Library",
-        "version": "0.3.0",
+        "version": "0.4.0",  # Updated for hybrid auth integration
         "status": "ready" if (has_anthropic or has_openai) else "limited",
         "ai_providers": {
             "anthropic": "configured" if has_anthropic else "not_configured",
             "openai": "configured" if has_openai else "not_configured"
         },
+        "auth": {
+            "jwt_configured": has_jwt_secret,
+            "note": "Use Bearer token from /api/auth endpoints for authenticated requests"
+        },
         "endpoints": {
+            # Auth endpoints
+            "auth_me": {"path": "/api/auth/me", "method": "GET", "auth": "required", "description": "Get current authenticated user"},
+            
+            # Tutor endpoints
             "health": {"path": "/health", "method": "GET"},
             "tutor": {"path": "/api/tutor", "method": "POST", "info_method": "GET"},
             "tutor_providers": {"path": "/api/tutor/providers", "method": "GET"},
             "tutor_subjects": {"path": "/api/tutor/subjects", "method": "GET"},
             "jade": {"path": "/api/jade", "method": "POST", "info_method": "GET", "description": "JADE Pattern Oracle"},
+            
+            # Learning endpoints
             "learning_modules": {"path": "/api/learning/modules", "method": "GET", "description": "List learning modules"},
             "learning_session_start": {"path": "/api/learning/session/start", "method": "POST", "description": "Start learning session"},
-            "learning_session_complete": {"path": "/api/learning/session/{id}/complete", "method": "POST", "description": "Complete session & mint MIC"},
+            "learning_session_complete": {"path": "/api/learning/session/{id}/complete", "method": "POST", "auth": "optional", "description": "Complete session & mint MIC (auth binds MIC to subject_id)"},
             "learning_progress": {"path": "/api/learning/users/{id}/progress", "method": "GET", "description": "Get user progress"},
             "learning_estimate": {"path": "/api/learning/estimate-reward", "method": "GET", "description": "Estimate MIC reward"},
             "learning_status": {"path": "/api/learning/system-status", "method": "GET", "description": "System & circuit breaker status"},
-            "wallet_balance": {"path": "/api/v1/wallet/balance", "method": "GET", "description": "Get MIC wallet balance (derived from ledger)"},
-            "wallet_ledger": {"path": "/api/v1/wallet/ledger", "method": "GET", "description": "Get full MIC transaction history"},
-            "wallet_breakdown": {"path": "/api/v1/wallet/breakdown", "method": "GET", "description": "Get MIC balance breakdown by type"},
+            
+            # Wallet endpoints (support both auth and user_id parameter)
+            "wallet_balance": {"path": "/api/v1/wallet/balance", "method": "GET", "auth": "optional", "description": "Get MIC wallet balance (derived from ledger)"},
+            "wallet_ledger": {"path": "/api/v1/wallet/ledger", "method": "GET", "auth": "optional", "description": "Get full MIC transaction history"},
+            "wallet_breakdown": {"path": "/api/v1/wallet/breakdown", "method": "GET", "auth": "optional", "description": "Get MIC balance breakdown by type"},
+            
+            # Debug endpoints
             "debug_anthropic": {"path": "/api/debug/test-anthropic", "method": "GET"},
             "debug_openai": {"path": "/api/debug/test-openai", "method": "GET"},
+            
+            # Agent endpoints
             "agents_register": {"path": "/agents/register", "method": "POST"},
             "agents_query": {"path": "/agents/query", "method": "POST"},
             "learn_submit": {"path": "/oaa/learn/submit", "method": "POST"}
