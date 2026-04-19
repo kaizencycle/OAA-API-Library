@@ -65,6 +65,11 @@ services:
         sync: false
       - key: MEMORY_HMAC_SECRET
         generateValue: true
+      # C-286 sovereign KV journal (falls back to MEMORY_HMAC_SECRET / OAA_HMAC_SECRET if unset)
+      - key: KV_HMAC_SECRET
+        generateValue: true
+      - key: CIVIC_LEDGER_TOKEN
+        sync: false
       - key: EVE_HMAC_SECRET
         generateValue: true
       - key: DEV_MODE
