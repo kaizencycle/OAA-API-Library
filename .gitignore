@@ -97,6 +97,9 @@ temp/
 *.sln
 *.sw?
 
+# KV bridge warm store — runtime state, not committed
+data/kv-bridge.json
+
 # OAA-specific
 data/eomm/_invalid/
 out/proof-backrefs.json

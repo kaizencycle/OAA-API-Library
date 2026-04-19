@@ -74,6 +74,9 @@ services:
         generateValue: true
       - key: DEV_MODE
         value: "1"
+      # Terminal warm KV fallback (Upstash ceiling / degradation)
+      - key: KV_BRIDGE_SECRET
+        generateValue: true
     healthCheckPath: /
 
   # GIC Gateway Service
