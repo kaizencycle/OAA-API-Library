@@ -1,0 +1,22 @@
+# C-287 HIVE mesh execution — forward recent OAA journal entries to Civic ledger ingest
+name: Seal OAA Memory
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  seal-memory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seal recent memory entries
+        env:
+          CIVIC_LEDGER_URL: ${{ secrets.CIVIC_LEDGER_URL }}
+          LEDGER_BASE_URL: ${{ secrets.LEDGER_BASE_URL }}
+          CIVIC_LEDGER_TOKEN: ${{ secrets.CIVIC_LEDGER_TOKEN }}
+          LEDGER_ADMIN_TOKEN: ${{ secrets.LEDGER_ADMIN_TOKEN }}
+          OAA_SEAL_LOOKBACK: "50"
+        run: node scripts/oaa/seal-memory.mjs

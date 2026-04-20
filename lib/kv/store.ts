@@ -4,8 +4,9 @@ import type { OaaMemoryEntry } from "../../types/oaa-kv";
 import { canonicalJson } from "../crypto/canonicalJson";
 import { sha256Hex } from "../crypto/hmac";
 
-const MEMORY_PATH =
-  process.env.OAA_MEMORY_PATH || path.join(process.cwd(), "OAA_MEMORY.json");
+function getMemoryPath(): string {
+  return process.env.OAA_MEMORY_PATH || path.join(process.cwd(), "OAA_MEMORY.json");
+}
 
 type MemoryFile = {
   version?: string;
@@ -19,7 +20,7 @@ type MemoryFile = {
 
 async function readMemoryFile(): Promise<MemoryFile> {
   try {
-    const raw = await fs.readFile(MEMORY_PATH, "utf8");
+    const raw = await fs.readFile(getMemoryPath(), "utf8");
     return JSON.parse(raw) as MemoryFile;
   } catch {
     return {
@@ -36,7 +37,7 @@ async function readMemoryFile(): Promise<MemoryFile> {
 
 async function writeMemoryFile(data: MemoryFile): Promise<void> {
   data.updatedAt = new Date().toISOString();
-  await fs.writeFile(MEMORY_PATH, JSON.stringify(data, null, 2), "utf8");
+  await fs.writeFile(getMemoryPath(), JSON.stringify(data, null, 2), "utf8");
 }
 
 function isOaaMemoryEntry(n: unknown): n is OaaMemoryEntry {
@@ -99,4 +100,25 @@ export async function getLatestHash(): Promise<string | null> {
     }
   }
   return null;
+}
+
+/** Latest `OAA_MEMORY_ENTRY_V1` per `data.key` (newest by `ts` wins). */
+export async function getLatestJournalEntriesByKeys(
+  keys: string[]
+): Promise<Record<string, OaaMemoryEntry | null>> {
+  const db = await readMemoryFile();
+  const notes = Array.isArray(db.notes) ? db.notes : [];
+  const journal = notes.filter(isOaaMemoryEntry).sort((a, b) => b.ts - a.ts);
+
+  const out: Record<string, OaaMemoryEntry | null> = {};
+  for (const k of keys) {
+    out[k] = null;
+  }
+  for (const e of journal) {
+    const dk = e.data.key;
+    if (keys.includes(dk) && out[dk] === null) {
+      out[dk] = e;
+    }
+  }
+  return out;
 }
