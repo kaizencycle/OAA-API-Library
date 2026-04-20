@@ -1,0 +1,75 @@
+# Mobius node declaration — schema v1 (declaration only; no runtime execution here)
+version: "1.0"
+
+mesh:
+  enabled: true
+  node_id: "oaa-api-library"
+  node_name: "OAA API Library"
+  tier: "service"
+  role: "service_node"
+
+  repository:
+    full_name: "kaizencycle/OAA-API-Library"
+    default_branch: "main"
+
+  discovery:
+    enabled: true
+    registry_participation: true
+
+pulse:
+  enabled: true
+  # Resolve with deployment base URL (Render / local)
+  health_url: "/api/kv-bridge/health"
+  feed_url: "/api/oaa/kv?prefix="
+  snapshot_url: "/api/oaa/context"
+  freshness_sla_seconds: 1800
+  integrity_weight: 1.0
+
+  lanes:
+    - integrity
+    - heartbeat
+    - mic_readiness
+    - vault
+    - mesh
+    - ledger
+    - mcp
+
+  authoritative_for:
+    - oaa_memory_journal
+    - kv_bridge_warm
+    - companion_governance_context
+
+  emits:
+    heartbeat: false
+    gi: false
+    mii: true
+    mic: true
+    vault: false
+    tripwire: false
+    anomalies: true
+
+ingest:
+  enabled: true
+  mode: "client_of_other_node"
+
+  targets:
+    - node_id: "civic-protocol-core"
+      purpose: "durable_ledger"
+      write_url: "https://<civic-core>/mesh/ingest"
+      auth: "bearer"
+      accepts:
+        - OAA_MEMORY_ENTRY_V1
+        - MIC_READINESS_V1
+        - MIC_SEAL_V1
+        - MIC_RESERVE_RECONCILIATION_V1
+        - MOBIUS_PULSE_V1
+        - EPICON_ENTRY_V1
+
+mcp:
+  enabled: false
+
+policy:
+  write_truth_locally: false
+  mirror_feed_to_repo: true
+  canonical_ledger_node: "civic-protocol-core"
+  hash_algorithm: "sha256"
