@@ -18,7 +18,9 @@ KV / runtime state
 |--------|--------|
 | `mesh` | Node identity, tier, role, repository, discovery |
 | `pulse` | What the node exposes for health, feeds, snapshots; lanes; `authoritative_for`; `emits` flags |
-| `ingest` | How the node participates in writes: `mode`, optional `write_url` / `auth` / `accepts`, and/or `targets[]` for client forwarding |
+| `ingest` | How the node participates in writes: `mode`, optional `write_url` / `auth` / `accepts`, `targets[]` for client forwarding, and optional **`sources`** (read URLs other nodes use when composing world / pulse) |
+| `jobs` | **Declaration only** — maps workflow ids to `.github/workflows/*.yml` plus `trigger` / `cron` (execution is GitHub Actions, not this file) |
+| `governance` | Agent PR rules, merge gates, reviewer handles (policy text; enforce in branch protection + CODEOWNERS) |
 | `mcp` | MCP server and discovery URLs when the node exposes tools |
 | `policy` | Canonical ledger node, hashing, mirroring, local truth |
 
@@ -76,6 +78,8 @@ Declare under `ingest.targets[].accepts` or ledger `ingest.accepts` as appropria
 
 ## This repository (`OAA-API-Library`)
 
-Root [`mobius.yaml`](../mobius.yaml) declares **OAA** as a **`service_node`**: append-only memory (`/api/oaa/kv`), optional warm **KV bridge** (`/api/kv-bridge/*`), and **client** forwarding of proofs to **`civic-protocol-core`** (`/mesh/ingest`). Relative URLs in `pulse` are resolved against the deployed hub base URL.
+Root [`mobius.yaml`](../mobius.yaml) declares **OAA** as a **`service_node`**: append-only memory (`/api/oaa/kv`), latest journal slices (**`GET /api/oaa/kv/latest`** for HIVE / mesh consumers), optional warm **KV bridge** (`/api/kv-bridge/*`), **`ingest.sources`** pointers for cross-node reads, **`jobs`** listing **`seal-memory`** (`.github/workflows/seal-memory.yml`), and **client** forwarding of proofs to **`civic-protocol-core`** (`/mesh/ingest`). The CI script [`scripts/oaa/seal-memory.mjs`](../scripts/oaa/seal-memory.mjs) re-forwards recent `OAA_MEMORY_ENTRY_V1` rows when secrets are present.
 
-For the full cross-repo rollout (Terminal writer + Substrate spec authority + Civic `mobius.yaml`), apply the same schema in those repositories on their own branches.
+Relative URLs in `pulse` / `ingest.sources.sovereign_memory` are resolved against the deployed hub base URL.
+
+For the full cross-repo rollout (Substrate `mesh-sync`, Terminal `publish-cycle-state`, HIVE `world-update`, browser-shell renderers), apply the same schema and workflows in those repositories on their own branches.

@@ -1,4 +1,5 @@
 import type { OaaMemoryEntry } from "../../types/oaa-kv";
+import { buildOaaMemoryIngestBody } from "./oaaProof";
 
 const LEDGER_URL =
   process.env.CIVIC_LEDGER_URL || process.env.LEDGER_BASE_URL || "";
@@ -20,15 +21,6 @@ export async function sealToLedger(entry: OaaMemoryEntry): Promise<void> {
       Authorization: `Bearer ${LEDGER_TOKEN}`,
       "X-MNS-Node": "oaa-api-library"
     },
-    body: JSON.stringify({
-      type: "OAA_MEMORY_ENTRY_V1",
-      agent: entry.agent,
-      cycle: entry.cycle,
-      key: entry.data.key,
-      intent: entry.intent ?? null,
-      hash: entry.hash,
-      previous_hash: entry.previous_hash,
-      timestamp: new Date(entry.ts).toISOString()
-    })
+    body: JSON.stringify(buildOaaMemoryIngestBody(entry))
   });
 }
