@@ -4,6 +4,7 @@ The Open Autonomous Academy (OAA) Hub provides a comprehensive system for AI gov
 
 ## 🏛️ Core Architecture
 
+- **Mobius mesh**: Node declaration for pulse / ingest routing lives in [`mobius.yaml`](./mobius.yaml); see [`docs/mobius_yaml_v1.md`](./docs/mobius_yaml_v1.md) for the v1 schema canon.
 - **Project**: Open Autonomous Academy (OAA) — integrity-first AI governance loop
 - **Companions**: Jade (builder), Eve (reflection), Zeus (ops), Hermes (routing)
 - **Civic Stack**: GIC (.gic domains), Civic Ledger (proofs), GIC Gateway, Virtue Accords (Cycle 0)
