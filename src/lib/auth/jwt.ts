@@ -3,9 +3,32 @@
 
 import { generateHMAC, generateToken } from '../crypto/hash';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'oaa-dev-secret-change-in-production';
+const DEV_JWT_SECRET = 'oaa-dev-secret-change-in-production';
+const MIN_JWT_SECRET_LENGTH = 32;
 const JWT_EXPIRES_IN_DAYS = 30;
 const JWT_EXPIRES_IN_MS = JWT_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000;
+
+function resolveJWTSecret(): string {
+  const secret = process.env.JWT_SECRET?.trim();
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!secret) {
+    if (isProduction) {
+      throw new Error('JWT_SECRET is required in production');
+    }
+    return DEV_JWT_SECRET;
+  }
+
+  if (secret.length < MIN_JWT_SECRET_LENGTH) {
+    throw new Error(`JWT_SECRET must be at least ${MIN_JWT_SECRET_LENGTH} characters`);
+  }
+
+  if (isProduction && secret === DEV_JWT_SECRET) {
+    throw new Error('JWT_SECRET must not use the development fallback in production');
+  }
+
+  return secret;
+}
 
 export interface TokenPayload {
   userId: string;
@@ -49,9 +72,10 @@ export function generateJWT(payload: Omit<TokenPayload, 'iat' | 'exp'>): string 
     exp: now + JWT_EXPIRES_IN_MS,
   };
 
+  const secret = resolveJWTSecret();
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64UrlEncode(JSON.stringify(fullPayload));
-  const signature = base64UrlEncode(generateHMAC(`${header}.${body}`, JWT_SECRET));
+  const signature = base64UrlEncode(generateHMAC(`${header}.${body}`, secret));
 
   return `${header}.${body}.${signature}`;
 }
@@ -67,9 +91,11 @@ export function verifyJWT(token: string): TokenPayload | null {
 
     const [header, body, signature] = parts;
 
+    const secret = resolveJWTSecret();
+
     // Verify signature
     const expectedSignature = base64UrlEncode(
-      generateHMAC(`${header}.${body}`, JWT_SECRET)
+      generateHMAC(`${header}.${body}`, secret)
     );
     if (signature !== expectedSignature) return null;
 
