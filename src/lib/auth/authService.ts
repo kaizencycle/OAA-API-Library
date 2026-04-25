@@ -29,6 +29,29 @@ async function getPrisma(): Promise<PrismaClient> {
   return prisma;
 }
 
+function allowDevMagicLinkLogs(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.ALLOW_DEV_MAGIC_LINK_LOGS === 'true'
+  );
+}
+
+function logMagicLinkGenerated(email: string, tokenHash: string, expiresAt: Date, magicUrl?: string): void {
+  const emailHash = sha256(email.toLowerCase()).slice(0, 12);
+  const tokenHashPrefix = tokenHash.slice(0, 12);
+
+  if (allowDevMagicLinkLogs() && magicUrl) {
+    console.warn(
+      `[MagicLink:DEV_ONLY] emailHash=${emailHash} tokenHash=${tokenHashPrefix} expiresAt=${expiresAt.toISOString()} url=${magicUrl}`,
+    );
+    return;
+  }
+
+  console.log(
+    `[MagicLink] generated emailHash=${emailHash} tokenHash=${tokenHashPrefix} expiresAt=${expiresAt.toISOString()}`,
+  );
+}
+
 export interface RegisterInput {
   handle: string;
   email: string;
@@ -187,12 +210,10 @@ export class AuthService {
       },
     });
 
-    // Build magic link URL
+    // Build magic link URL for mail transport only. Do not log full token in production logs.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const magicUrl = `${baseUrl}/auth/verify?token=${token}`;
-
-    // Log for development (TODO: integrate actual email service)
-    console.log(`[MagicLink] Generated for ${email}: ${magicUrl}`);
+    logMagicLinkGenerated(email, tokenHash, expiresAt, magicUrl);
 
     // TODO: Send email via nodemailer or your email service
     // await sendEmail({ to: email, subject: 'Sign in to Mobius', body: magicUrl });
