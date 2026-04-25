@@ -1,12 +1,13 @@
-# Mobius node declaration — schema v1 (declaration only; no runtime execution here)
-version: "1.0"
+# Mobius node declaration — schema v1.1 (declaration only; no runtime execution here)
+# Phase 3 Civic Mesh: OAA is sovereign memory and memory-seal bridge.
+version: "1.1"
 
 mesh:
   enabled: true
   node_id: "oaa-api-library"
   node_name: "OAA API Library"
   tier: "service"
-  role: "service_node"
+  role: "sovereign_memory_node"
 
   repository:
     full_name: "kaizencycle/OAA-API-Library"
@@ -16,15 +17,20 @@ mesh:
     enabled: true
     registry_participation: true
 
+  civic_mesh:
+    phase: 3
+    role: "sovereign_memory_seal_bridge"
+    upstream_pulse: "kaizencycle/mobius-civic-ai-terminal"
+    downstream_proof: "kaizencycle/Civic-Protocol-Core"
+    canon: "OAA preserves sovereign memory and seals proof-worthy memory into Civic Ledger."
+
 pulse:
   enabled: true
-  # Resolve with deployment base URL (Render / local)
   health_url: "/api/kv-bridge/health"
   feed_url: "/api/oaa/kv?prefix="
   snapshot_url: "/api/oaa/context"
   freshness_sla_seconds: 1800
   integrity_weight: 1.0
-
   lanes:
     - integrity
     - heartbeat
@@ -33,12 +39,12 @@ pulse:
     - mesh
     - ledger
     - mcp
-
+    - sovereign_memory
   authoritative_for:
     - oaa_memory_journal
     - kv_bridge_warm
     - companion_governance_context
-
+    - sovereign_memory_context
   emits:
     heartbeat: false
     gi: false
@@ -47,12 +53,11 @@ pulse:
     vault: false
     tripwire: false
     anomalies: true
+    memory_seal: true
 
 ingest:
   enabled: true
-  mode: "client_of_other_node"
-
-  # Read-only sources other nodes use when composing world / pulse (HIVE mesh contract)
+  mode: "memory_bridge"
   sources:
     terminal_snapshot:
       node_id: "mobius-terminal"
@@ -63,7 +68,6 @@ ingest:
     sovereign_memory:
       node_id: "oaa-api-library"
       read_url: "/api/oaa/kv/latest"
-
   targets:
     - node_id: "civic-protocol-core"
       purpose: "durable_ledger"
@@ -76,15 +80,39 @@ ingest:
         - MIC_RESERVE_RECONCILIATION_V1
         - MOBIUS_PULSE_V1
         - EPICON_ENTRY_V1
+  idempotency:
+    required: true
+    key_fields:
+      - node_id
+      - event_type
+      - cycle
+      - source_hash
+      - workflow_id
+    duplicate_policy: "skip_previously_sealed_hash"
 
-# Execution fabric: declared jobs (GitHub Actions / cron) — this repo runs seal-memory only
+retention:
+  hot_window: 50
+  durable_target: "civic-protocol-core"
+  memory_source: "OAA_MEMORY.json"
+  duplicate_policy: "idempotency_key"
+  seal_lookback_default: 50
+
 jobs:
   enabled: true
+  status_values:
+    - active
+    - manual
+    - planned
+    - archived
   workflows:
     - id: "seal-memory"
       file: ".github/workflows/seal-memory.yml"
+      status: "active"
       trigger: "schedule"
       cron: "*/10 * * * *"
+      role: "memory_seal_bridge"
+      output:
+        - "Civic Ledger /mesh/ingest"
 
 governance:
   agent_prs_allowed: true
@@ -101,3 +129,6 @@ policy:
   mirror_feed_to_repo: true
   canonical_ledger_node: "civic-protocol-core"
   hash_algorithm: "sha256"
+  oaa_is_memory_bridge: true
+  ledger_is_proof: true
+  human_merge_required_for_canon: true

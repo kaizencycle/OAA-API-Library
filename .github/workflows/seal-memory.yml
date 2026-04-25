@@ -1,10 +1,17 @@
-# C-287 HIVE mesh execution — forward recent OAA journal entries to Civic ledger ingest
+# C-292 Phase 3 HIVE mesh execution — forward recent OAA journal entries to Civic ledger ingest
 name: Seal OAA Memory
 
 on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: seal-oaa-memory
+  cancel-in-progress: true
 
 jobs:
   seal-memory:
@@ -20,3 +27,15 @@ jobs:
           LEDGER_ADMIN_TOKEN: ${{ secrets.LEDGER_ADMIN_TOKEN }}
           OAA_SEAL_LOOKBACK: "50"
         run: node scripts/oaa/seal-memory.mjs
+
+      - name: Commit sealed memory index
+        run: |
+          git config user.name "mobius-bot"
+          git config user.email "bot@mobius.substrate"
+          git add ledger/oaa-sealed-memory.json
+          if git diff --staged --quiet; then
+            echo "No sealed memory index changes"
+          else
+            git commit -m "chore(oaa): update sealed memory index [skip ci]"
+            git push
+          fi
