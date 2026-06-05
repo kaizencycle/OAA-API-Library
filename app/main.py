@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 import os, time, uuid, re
+import logging
+
+logger = logging.getLogger("oaa")
 
 # Auth imports
 from app.auth import require_auth, optional_auth, AuthedRequest
@@ -810,76 +813,79 @@ When you see changes across entries (e.g., "more tired", "more hopeful"), acknow
 
 # --- Debug endpoints ---
 
-@app.get("/api/debug/test-anthropic")
-async def test_anthropic():
-    """
-    Debug endpoint to verify Anthropic API is working.
-    """
+def _debug_endpoints_enabled() -> bool:
+    return os.getenv("ALLOW_DEBUG_ENDPOINTS", "").strip().lower() in {"1", "true", "yes"}
+
+
+async def require_debug_access(request: Request) -> AuthedRequest:
+    if not _debug_endpoints_enabled():
+        # Hide disabled debug routes in production instead of confirming they exist.
+        raise HTTPException(status_code=404, detail="Not Found")
+    return await require_auth(request, None)
+
+
+async def _probe_provider(url: str, headers: dict, payload: dict) -> dict:
+    """Return a coarse provider reachability verdict without exposing upstream detail."""
     import httpx
-    
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+        if response.status_code == 200:
+            return {"status": "ok", "reachable": True}
+
+        logger.warning(
+            "debug provider probe returned non-200: status=%s body=%s",
+            response.status_code,
+            response.text[:200],
+        )
+        return {
+            "status": "error",
+            "reachable": False,
+            "upstream_status": response.status_code,
+        }
+    except Exception as exc:  # noqa: BLE001 - callers should only receive a coarse verdict.
+        logger.warning("debug provider probe failed: %s", type(exc).__name__)
+        return {"status": "error", "reachable": False}
+
+
+@app.get("/api/debug/test-anthropic")
+async def test_anthropic(_: AuthedRequest = Depends(require_debug_access)):
+    """Auth- and flag-gated reachability check for Anthropic."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        return {"status": "error", "error": "ANTHROPIC_API_KEY not set"}
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 50,
-                    "messages": [{"role": "user", "content": "Say 'test successful' in exactly those words."}]
-                }
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                text = data.get("content", [{}])[0].get("text", "")
-                return {"status": "success", "test_response": text, "model": "claude-sonnet-4-20250514"}
-            else:
-                return {"status": "error", "code": response.status_code, "error": response.json()}
-    except Exception as e:
-        return {"status": "error", "type": type(e).__name__, "error": str(e)}
+        return {"status": "error", "reachable": False, "reason": "key_not_configured"}
+
+    return await _probe_provider(
+        "https://api.anthropic.com/v1/messages",
+        {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        {
+            "model": os.getenv("ANTHROPIC_PROBE_MODEL", "claude-sonnet-4-20250514"),
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "ping"}],
+        },
+    )
 
 @app.get("/api/debug/test-openai")
-async def test_openai():
-    """
-    Debug endpoint to verify OpenAI API is working.
-    """
-    import httpx
-    
+async def test_openai(_: AuthedRequest = Depends(require_debug_access)):
+    """Auth- and flag-gated reachability check for OpenAI."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        return {"status": "error", "error": "OPENAI_API_KEY not set"}
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "gpt-4o-mini",
-                    "messages": [{"role": "user", "content": "Say 'test successful' in exactly those words."}],
-                    "max_tokens": 50
-                }
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return {"status": "success", "test_response": text, "model": "gpt-4o-mini"}
-            else:
-                return {"status": "error", "code": response.status_code, "error": response.json()}
-    except Exception as e:
-        return {"status": "error", "type": type(e).__name__, "error": str(e)}
+        return {"status": "error", "reachable": False, "reason": "key_not_configured"}
+
+    return await _probe_provider(
+        "https://api.openai.com/v1/chat/completions",
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        {
+            "model": os.getenv("OPENAI_PROBE_MODEL", "gpt-4o-mini"),
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 16,
+        },
+    )
 
 # --- Root endpoint ---
 
@@ -1507,9 +1513,7 @@ def root():
             "wallet_ledger": {"path": "/api/v1/wallet/ledger", "method": "GET", "auth": "optional", "description": "Get full MIC transaction history"},
             "wallet_breakdown": {"path": "/api/v1/wallet/breakdown", "method": "GET", "auth": "optional", "description": "Get MIC balance breakdown by type"},
             
-            # Debug endpoints
-            "debug_anthropic": {"path": "/api/debug/test-anthropic", "method": "GET"},
-            "debug_openai": {"path": "/api/debug/test-openai", "method": "GET"},
+            # Debug endpoints are auth + ALLOW_DEBUG_ENDPOINTS gated and are not advertised here.
             
             # Agent endpoints
             "agents_register": {"path": "/agents/register", "method": "POST"},
