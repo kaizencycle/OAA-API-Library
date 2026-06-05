@@ -817,11 +817,11 @@ def _debug_endpoints_enabled() -> bool:
     return os.getenv("ALLOW_DEBUG_ENDPOINTS", "").strip().lower() in {"1", "true", "yes"}
 
 
-async def require_debug_access(auth: AuthedRequest = Depends(require_auth)) -> AuthedRequest:
+async def require_debug_access(request: Request) -> AuthedRequest:
     if not _debug_endpoints_enabled():
         # Hide disabled debug routes in production instead of confirming they exist.
         raise HTTPException(status_code=404, detail="Not Found")
-    return auth
+    return await require_auth(request, None)
 
 
 async def _probe_provider(url: str, headers: dict, payload: dict) -> dict:
