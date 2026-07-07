@@ -30,6 +30,10 @@ jobs:
 
       - name: Commit sealed memory index
         run: |
+          if [ ! -f ledger/oaa-sealed-memory.json ]; then
+            echo "No sealed memory index (ledger creds unset or no new seals) — nothing to commit"
+            exit 0
+          fi
           git config user.name "mobius-bot"
           git config user.email "bot@mobius.substrate"
           git add ledger/oaa-sealed-memory.json
