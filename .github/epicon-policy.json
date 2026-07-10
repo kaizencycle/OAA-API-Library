@@ -1,0 +1,49 @@
+{
+  "$comment": "EPICON tier policy for OAA-API-Library. Declarative, proposer-independent (Rule 5.1). Unmatched paths classify EP-3 (Rule 5.2). PR tier = max across changed files (Rule 5.3).",
+  "policy_id": "oaa-policy-v1",
+  "EP-1": [
+    "docs/**",
+    "**/*.md",
+    "*.md",
+    "lore/**",
+    "assets/**",
+    "public/**"
+  ],
+  "EP-2": [
+    "app/**",
+    "src/**",
+    "pages/**",
+    "packages/**",
+    "lib/**",
+    "components/**",
+    "scripts/**",
+    "tests/**",
+    "specs/**",
+    "configs/**",
+    "data/**",
+    "types/**",
+    "dev/**",
+    "ai-seo-engine/**",
+    "oaa-central-hub/**",
+    "gic-indexer/**",
+    "package.json",
+    "package-lock.json",
+    "requirements.txt",
+    "next.config.js"
+  ],
+  "EP-3": [
+    "app/auth/**",
+    "app/security/**",
+    "app/services/**",
+    "app/receipts/**",
+    "app/models/**",
+    "migrations/**",
+    "prisma/**",
+    "schemas/**",
+    "capability-gate/**",
+    ".github/workflows/**",
+    "CODEOWNERS",
+    "render.yaml",
+    "mobius.yaml"
+  ]
+}
