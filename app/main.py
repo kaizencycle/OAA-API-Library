@@ -1250,18 +1250,14 @@ def get_learning_system_status():
     """
     gii = mic_service.get_global_integrity_index()
     gii_multiplier, status = mic_service.calculate_gii_multiplier(gii)
-    
+
     return {
         "global_integrity_index": gii,
         "circuit_breaker_status": status,
         "gii_multiplier": gii_multiplier,
-        "minting_enabled": gii >= MICMintingService.MIN_GII_FOR_MINTING,
-        "thresholds": {
-            "healthy": 0.90,
-            "warning": 0.75,
-            "critical": 0.60,
-            "circuit_breaker": 0.60
-        }
+        "minting_enabled": gii >= MICMintingService.REWARD_FLOOR,
+        "threshold_source": MICMintingService.THRESHOLD_SOURCE,
+        "thresholds": mic_service.get_canon_thresholds(),
     }
 
 

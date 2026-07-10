@@ -31,11 +31,19 @@ class MICMintingService:
     - User integrity scores
     - Streak bonuses
     """
-    
-    # Minimum thresholds
+
+    # Constitutional GII thresholds (Mobius-Substrate canon — C-368)
+    THRESHOLD_SOURCE = "Mobius-Substrate constitutional constants"
+    CIRCUIT_BREAKER = 0.85
+    REWARD_FLOOR = 0.90
+    MINT_GATE = 0.95
+    WARNING_BAND = (0.85, 0.90)
+
+    # Minimum user/session thresholds (unchanged)
     MIN_INTEGRITY_SCORE = 0.70
     MIN_ACCURACY = 0.70
-    MIN_GII_FOR_MINTING = 0.60
+    # Minting requires GII at or above reward floor (canon)
+    MIN_GII_FOR_MINTING = REWARD_FLOOR
     
     # Difficulty multipliers
     DIFFICULTY_MULTIPLIERS = {
@@ -54,7 +62,26 @@ class MICMintingService:
     
     def __init__(self):
         self.gii_override = os.getenv("GII_OVERRIDE")  # For testing
-        
+        self._sustained_gate_todo_logged = False
+
+    @classmethod
+    def get_canon_thresholds(cls) -> Dict[str, Any]:
+        """Return constitutional threshold config for system-status."""
+        return {
+            "circuit_breaker": cls.CIRCUIT_BREAKER,
+            "reward_floor": cls.REWARD_FLOOR,
+            "mint_gate": cls.MINT_GATE,
+            "warning_band": list(cls.WARNING_BAND),
+        }
+
+    def _log_sustained_gate_todo_once(self) -> None:
+        if not self._sustained_gate_todo_logged:
+            logger.info(
+                "TODO(C-368): sustained 5-cycle mint gate not tracked; "
+                "enforcing instantaneous GII >= %.2f for full rate",
+                self.MINT_GATE,
+            )
+            self._sustained_gate_todo_logged = True
     def get_global_integrity_index(self) -> float:
         """
         Get the current Global Integrity Index (GII)
@@ -78,18 +105,24 @@ class MICMintingService:
     
     def calculate_gii_multiplier(self, gii: float) -> Tuple[float, str]:
         """
-        Calculate reward multiplier based on system health (GII)
-        
-        Returns (multiplier, status)
+        Calculate reward multiplier based on system health (GII).
+
+        Canon mapping (C-368):
+        - GII < 0.85: circuit breaker — minting halted
+        - 0.85–0.90: below reward floor — minting halted, status warning
+        - 0.90–0.95: minting enabled at reduced multiplier
+        - ≥ 0.95: full rate (instantaneous gate; sustained 5-cycle tracking TODO)
         """
-        if gii >= 0.90:
-            return 1.0, "healthy"
-        elif gii >= 0.75:
-            return 0.8, "warning"
-        elif gii >= 0.60:
-            return 0.5, "critical"
-        else:
+        if gii < self.CIRCUIT_BREAKER:
             return 0.0, "circuit_breaker_active"
+        if gii < self.REWARD_FLOOR:
+            return 0.0, "warning"
+        if gii < self.MINT_GATE:
+            span = self.MINT_GATE - self.REWARD_FLOOR
+            multiplier = 0.85 + ((gii - self.REWARD_FLOOR) / span) * 0.15
+            return round(multiplier, 4), "healthy"
+        self._log_sustained_gate_todo_once()
+        return 1.0, "healthy"
     
     def calculate_streak_bonus(self, streak_days: int) -> float:
         """Calculate streak bonus based on consecutive learning days"""
@@ -183,8 +216,14 @@ class MICMintingService:
         """Get human-readable rejection reason"""
         reasons = []
         
-        if gii < self.MIN_GII_FOR_MINTING:
-            reasons.append(f"System integrity too low (GII: {gii:.2f}, required: {self.MIN_GII_FOR_MINTING})")
+        if gii < self.CIRCUIT_BREAKER:
+            reasons.append(
+                f"Circuit breaker active (GII: {gii:.2f}, breaker: {self.CIRCUIT_BREAKER})"
+            )
+        elif gii < self.REWARD_FLOOR:
+            reasons.append(
+                f"Below reward floor (GII: {gii:.2f}, floor: {self.REWARD_FLOOR})"
+            )
         if integrity_score < self.MIN_INTEGRITY_SCORE:
             reasons.append(f"User integrity score too low ({integrity_score:.2f}, required: {self.MIN_INTEGRITY_SCORE})")
         if accuracy < self.MIN_ACCURACY:
@@ -221,9 +260,11 @@ class MICMintingService:
         gii = self.get_global_integrity_index()
         gii_multiplier, system_status = self.calculate_gii_multiplier(gii)
         
-        # Verify minting is allowed
-        if gii < self.MIN_GII_FOR_MINTING:
-            raise ValueError(f"Circuit breaker active. GII: {gii:.2f}")
+        # Verify minting is allowed (canon reward floor)
+        if gii < self.REWARD_FLOOR:
+            if gii < self.CIRCUIT_BREAKER:
+                raise ValueError(f"Circuit breaker active. GII: {gii:.2f}")
+            raise ValueError(f"Below reward floor. GII: {gii:.2f}")
         
         if integrity_score < self.MIN_INTEGRITY_SCORE:
             raise ValueError(f"Integrity score too low: {integrity_score:.2f}")
