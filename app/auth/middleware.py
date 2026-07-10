@@ -12,6 +12,7 @@ from typing import Optional
 from dataclasses import dataclass
 
 from .jwt import verify_jwt, extract_bearer_token, AuthClaims
+from .identity import resolve_identity
 
 
 # FastAPI security scheme
@@ -99,6 +100,51 @@ async def require_auth(
         )
     
     return user
+
+
+async def require_identity_auth(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> AuthedRequest:
+    """
+    Require a verified mobius-identity-service subject for mint and wallet routes.
+
+    Auth is evaluated before request-body validation on dependent routes — place this
+    dependency first in the handler signature.
+    """
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    else:
+        token = extract_bearer_token(request.headers.get("Authorization"))
+
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "authentication_required",
+                "message": "Bearer token required to mint or access wallet data.",
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    claims = await resolve_identity(token)
+    if not claims or not claims.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "invalid_or_unverified_token",
+                "message": "Valid identity-service Bearer token required.",
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return AuthedRequest(
+        user_id=claims.user_id,
+        handle=claims.handle,
+        email=claims.email,
+        wallet_address=claims.wallet_address,
+    )
 
 
 async def optional_auth(

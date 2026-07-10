@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger("oaa")
 
 # Auth imports
-from app.auth import require_auth, optional_auth, AuthedRequest
+from app.auth import require_auth, require_identity_auth, optional_auth, AuthedRequest, jwt_configured
 from app.receipts import create_mint_receipt, MintReceipt
 
 # Learning Hub imports
@@ -60,7 +60,7 @@ ORIGINS = DEFAULT_ORIGINS + extra_origins
 #          mobius-browser-shell-iv2a4ld68-kaizencycles-projects.vercel.app
 VERCEL_PREVIEW_PATTERN = re.compile(r"^https://mobius-browser-shell(-[a-z0-9]+-[a-z0-9]+-projects)?(-[a-z0-9]+)*\.vercel\.app$")
 
-app = FastAPI(title="OAA-API-Library", version="0.1.0")
+app = FastAPI(title="OAA-API-Library", version="0.4.0")
 
 # Custom CORS middleware to handle Vercel preview deployments
 @app.middleware("http")
@@ -814,7 +814,8 @@ When you see changes across entries (e.g., "more tired", "more hopeful"), acknow
 # --- Debug endpoints ---
 
 def _debug_endpoints_enabled() -> bool:
-    return os.getenv("ALLOW_DEBUG_ENDPOINTS", "").strip().lower() in {"1", "true", "yes"}
+    flag = os.getenv("DEBUG_ENDPOINTS_ENABLED", os.getenv("ALLOW_DEBUG_ENDPOINTS", ""))
+    return flag.strip().lower() in {"1", "true", "yes"}
 
 
 async def require_debug_access(request: Request) -> AuthedRequest:
@@ -1027,45 +1028,34 @@ def submit_answer(session_id: str, req: AnswerSubmitRequest):
     )
 
 
-@app.post("/api/learning/session/{session_id}/complete")
+@app.post(
+    "/api/learning/session/{session_id}/complete",
+    dependencies=[Depends(require_identity_auth)],
+)
 async def complete_learning_session(
-    session_id: str, 
-    req: SessionCompleteRequest,
-    auth: Optional[AuthedRequest] = Depends(optional_auth)
+    session_id: str,
+    auth: AuthedRequest = Depends(require_identity_auth),
+    req: SessionCompleteRequest = ...,
 ):
     """
     Complete a learning session and mint MIC rewards.
-    
-    🔐 SUBJECT BINDING: When authenticated, MIC is minted to the authenticated
-    user's wallet (subject_id). This ensures MIC always has a verifiable owner.
-    
-    Calculates rewards based on:
-    - Base module reward
-    - Accuracy (min 70%)
-    - User integrity score
-    - Global Integrity Index (circuit breaker)
-    - Streak bonuses
-    
-    Returns a hash receipt for verifiable proof of the mint transaction.
+
+    Authentication is required before minting. Anonymous sessions may still be
+    started and played; only earning requires a verified subject_id from
+    mobius-identity-service.
     """
     session = learning_store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     if session["status"] != "active":
         raise HTTPException(status_code=400, detail="Session already completed")
-    
+
     module = learning_store.get_module(session["module_id"])
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
-    
-    # 🔐 SUBJECT BINDING: Use authenticated user_id if available
-    # This is the canonical subject_id - the identity spine for MIC ownership
-    if auth:
-        subject_id = auth.user_id  # Canonical identity from JWT
-    else:
-        subject_id = session["user_id"]  # Fallback for backward compatibility
-    
+
+    subject_id = auth.user_id
     module_id = session["module_id"]
     
     # Check if already completed
@@ -1281,36 +1271,14 @@ def get_learning_system_status():
 
 @app.get("/api/v1/wallet/balance")
 async def get_wallet_balance(
-    user_id: Optional[str] = None,
-    auth: Optional[AuthedRequest] = Depends(optional_auth)
+    auth: AuthedRequest = Depends(require_identity_auth),
 ):
     """
-    Get user's MIC wallet balance.
-    
-    🔐 AUTHENTICATION: When authenticated via Bearer token, returns the
-    authenticated user's balance. user_id parameter is ignored when authenticated.
-    
-    CRITICAL: Balance is DERIVED from the ledger, never stored separately.
-    This ensures integrity and auditability of all MIC transactions.
-    
-    Query Parameters:
-    - user_id: User ID to get balance for (ignored if authenticated)
-    
-    Returns:
-    - balance: Total MIC balance (sum of all ledger entries)
-    - last_updated: Timestamp of last transaction
-    - recent_events: Last 10 ledger entries
+    Get the authenticated user's MIC wallet balance.
+
+    Balance is derived from the ledger, never stored separately.
     """
-    # 🔐 SUBJECT BINDING: Prefer authenticated user_id
-    if auth:
-        subject_id = auth.user_id  # Canonical identity from JWT
-    elif user_id:
-        subject_id = user_id  # Fallback for backward compatibility
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Either authenticate via Bearer token or provide user_id parameter"
-        )
+    subject_id = auth.user_id
     
     # Get derived balance from ledger
     balance = mic_ledger_store.get_balance(subject_id)
@@ -1345,38 +1313,14 @@ async def get_wallet_balance(
 
 @app.get("/api/v1/wallet/ledger")
 async def get_wallet_ledger(
-    user_id: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    auth: Optional[AuthedRequest] = Depends(optional_auth)
+    auth: AuthedRequest = Depends(require_identity_auth),
 ):
     """
-    Get full MIC ledger history for a user.
-    
-    🔐 AUTHENTICATION: When authenticated via Bearer token, returns the
-    authenticated user's ledger. user_id parameter is ignored when authenticated.
-    
-    The ledger is append-only and auditable - entries are never modified.
-    
-    Query Parameters:
-    - user_id: User ID to get ledger for (ignored if authenticated)
-    - limit: Number of entries to return (default 50, max 100)
-    - offset: Pagination offset
-    
-    Returns:
-    - total_entries: Total number of ledger entries
-    - entries: List of ledger entries (most recent first)
+    Get full MIC ledger history for the authenticated user.
     """
-    # 🔐 SUBJECT BINDING: Prefer authenticated user_id
-    if auth:
-        subject_id = auth.user_id  # Canonical identity from JWT
-    elif user_id:
-        subject_id = user_id  # Fallback for backward compatibility
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Either authenticate via Bearer token or provide user_id parameter"
-        )
+    subject_id = auth.user_id
     
     # Cap limit at 100
     limit = min(limit, 100)
@@ -1392,38 +1336,12 @@ async def get_wallet_ledger(
 
 @app.get("/api/v1/wallet/breakdown")
 async def get_wallet_breakdown(
-    user_id: Optional[str] = None,
-    auth: Optional[AuthedRequest] = Depends(optional_auth)
+    auth: AuthedRequest = Depends(require_identity_auth),
 ):
     """
-    Get MIC balance breakdown by transaction type.
-    
-    🔐 AUTHENTICATION: When authenticated via Bearer token, returns the
-    authenticated user's breakdown. user_id parameter is ignored when authenticated.
-    
-    Shows how much MIC was earned through each channel:
-    - LEARN: Learning module completions
-    - EARN: Other earning activities
-    - BONUS: Streak and achievement bonuses
-    - CORRECTION: Manual adjustments
-    
-    Query Parameters:
-    - user_id: User ID to get breakdown for (ignored if authenticated)
-    
-    Returns:
-    - Breakdown by reason type
-    - Total balance
+    Get MIC balance breakdown by transaction type for the authenticated user.
     """
-    # 🔐 SUBJECT BINDING: Prefer authenticated user_id
-    if auth:
-        subject_id = auth.user_id  # Canonical identity from JWT
-    elif user_id:
-        subject_id = user_id  # Fallback for backward compatibility
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Either authenticate via Bearer token or provide user_id parameter"
-        )
+    subject_id = auth.user_id
     
     breakdown = mic_ledger_store.get_balance_breakdown(subject_id)
     
@@ -1475,46 +1393,55 @@ def root():
     """
     has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
-    has_jwt_secret = bool(os.getenv("JWT_SECRET"))
-    
+    identity_ready = jwt_configured()
+    service_version = app.version
+
     return {
         "service": "OAA API Library",
-        "version": "0.4.0",  # Updated for hybrid auth integration
+        "version": service_version,
+        "jwt_configured": identity_ready,
         "status": "ready" if (has_anthropic or has_openai) else "limited",
         "ai_providers": {
             "anthropic": "configured" if has_anthropic else "not_configured",
             "openai": "configured" if has_openai else "not_configured"
         },
         "auth": {
-            "jwt_configured": has_jwt_secret,
-            "note": "Use Bearer token from /api/auth endpoints for authenticated requests"
+            "jwt_configured": identity_ready,
+            "identity_service": os.getenv(
+                "IDENTITY_API_BASE",
+                "https://mobius-identity-service.onrender.com",
+            ),
+            "note": "Mint and wallet endpoints require Bearer token from mobius-identity-service",
         },
         "endpoints": {
             # Auth endpoints
             "auth_me": {"path": "/api/auth/me", "method": "GET", "auth": "required", "description": "Get current authenticated user"},
-            
+
             # Tutor endpoints
             "health": {"path": "/health", "method": "GET"},
             "tutor": {"path": "/api/tutor", "method": "POST", "info_method": "GET"},
             "tutor_providers": {"path": "/api/tutor/providers", "method": "GET"},
             "tutor_subjects": {"path": "/api/tutor/subjects", "method": "GET"},
             "jade": {"path": "/api/jade", "method": "POST", "info_method": "GET", "description": "JADE Pattern Oracle"},
-            
+
             # Learning endpoints
             "learning_modules": {"path": "/api/learning/modules", "method": "GET", "description": "List learning modules"},
             "learning_session_start": {"path": "/api/learning/session/start", "method": "POST", "description": "Start learning session"},
-            "learning_session_complete": {"path": "/api/learning/session/{id}/complete", "method": "POST", "auth": "optional", "description": "Complete session & mint MIC (auth binds MIC to subject_id)"},
+            "learning_session_complete": {
+                "path": "/api/learning/session/{id}/complete",
+                "method": "POST",
+                "auth": "required",
+                "description": "Complete session and mint MIC (identity Bearer required)",
+            },
             "learning_progress": {"path": "/api/learning/users/{id}/progress", "method": "GET", "description": "Get user progress"},
             "learning_estimate": {"path": "/api/learning/estimate-reward", "method": "GET", "description": "Estimate MIC reward"},
-            "learning_status": {"path": "/api/learning/system-status", "method": "GET", "description": "System & circuit breaker status"},
-            
-            # Wallet endpoints (support both auth and user_id parameter)
-            "wallet_balance": {"path": "/api/v1/wallet/balance", "method": "GET", "auth": "optional", "description": "Get MIC wallet balance (derived from ledger)"},
-            "wallet_ledger": {"path": "/api/v1/wallet/ledger", "method": "GET", "auth": "optional", "description": "Get full MIC transaction history"},
-            "wallet_breakdown": {"path": "/api/v1/wallet/breakdown", "method": "GET", "auth": "optional", "description": "Get MIC balance breakdown by type"},
-            
-            # Debug endpoints are auth + ALLOW_DEBUG_ENDPOINTS gated and are not advertised here.
-            
+            "learning_status": {"path": "/api/learning/system-status", "method": "GET", "description": "System and circuit breaker status"},
+
+            # Wallet endpoints
+            "wallet_balance": {"path": "/api/v1/wallet/balance", "method": "GET", "auth": "required", "description": "Get MIC wallet balance (derived from ledger)"},
+            "wallet_ledger": {"path": "/api/v1/wallet/ledger", "method": "GET", "auth": "required", "description": "Get full MIC transaction history"},
+            "wallet_breakdown": {"path": "/api/v1/wallet/breakdown", "method": "GET", "auth": "required", "description": "Get MIC balance breakdown by type"},
+
             # Agent endpoints
             "agents_register": {"path": "/agents/register", "method": "POST"},
             "agents_query": {"path": "/agents/query", "method": "POST"},
