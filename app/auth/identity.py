@@ -21,6 +21,8 @@ _DEV_SECRETS = frozenset(
     }
 )
 
+_DEFAULT_INTROSPECT_BASE = "https://mobius-identity-service.onrender.com"
+
 
 def _configured_secrets() -> list[str]:
     secrets: list[str] = []
@@ -31,15 +33,62 @@ def _configured_secrets() -> list[str]:
     return secrets
 
 
+def introspect_base_url() -> str:
+    """Resolved introspect service base URL (explicit env or runtime default)."""
+    return (
+        os.getenv("MOBIUS_IDENTITY_INTROSPECT_URL")
+        or os.getenv("IDENTITY_API_BASE")
+        or _DEFAULT_INTROSPECT_BASE
+    ).rstrip("/")
+
+
+def introspect_explicitly_configured() -> bool:
+    """True when the operator set an introspect URL via environment (not code default alone)."""
+    return bool(
+        (os.getenv("MOBIUS_IDENTITY_INTROSPECT_URL") or "").strip()
+        or (os.getenv("IDENTITY_API_BASE") or "").strip()
+    )
+
+
 def jwt_configured() -> bool:
-    """True when identity verification is wired (local secret, JWKS, or introspect)."""
+    """
+    True when identity verification is explicitly configured by the operator.
+
+    Does not treat the runtime introspect default URL as configuration — set
+    IDENTITY_API_BASE or MOBIUS_IDENTITY_INTROSPECT_URL on Render for manifest truth.
+    """
     if _configured_secrets():
         return True
     if (os.getenv("MOBIUS_IDENTITY_JWKS_URL") or "").strip():
         return True
-    # Introspect delegation to mobius-identity-service is always wired in production
-    # (see verify_identity_via_introspect default base URL).
-    return True
+    return introspect_explicitly_configured()
+
+
+def identity_verification_status() -> dict:
+    """Manifest-facing identity verification truth (configured vs runtime default)."""
+    has_secrets = bool(_configured_secrets())
+    has_jwks = bool((os.getenv("MOBIUS_IDENTITY_JWKS_URL") or "").strip())
+    explicit = introspect_explicitly_configured()
+    base = introspect_base_url()
+
+    if has_secrets:
+        method = "local_secret"
+    elif has_jwks:
+        method = "jwks"
+    elif explicit:
+        method = "introspect_explicit"
+    else:
+        method = "introspect_default"
+
+    return {
+        "jwt_configured": jwt_configured(),
+        "method": method,
+        "introspect": {
+            "url": base,
+            "explicitly_configured": explicit,
+            "uses_runtime_default": method == "introspect_default",
+        },
+    }
 
 
 def _claims_from_payload(payload: dict) -> Optional[AuthClaims]:
@@ -69,12 +118,7 @@ def verify_identity_jwt(token: str) -> Optional[AuthClaims]:
 
 async def verify_identity_via_introspect(token: str) -> Optional[AuthClaims]:
     """Delegate verification to mobius-identity-service /auth/introspect."""
-    base = (
-        os.getenv("MOBIUS_IDENTITY_INTROSPECT_URL")
-        or os.getenv("IDENTITY_API_BASE")
-        or "https://mobius-identity-service.onrender.com"
-    ).rstrip("/")
-    url = f"{base}/auth/introspect"
+    url = f"{introspect_base_url()}/auth/introspect"
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(

@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger("oaa")
 
 # Auth imports
-from app.auth import require_auth, require_identity_auth, optional_auth, AuthedRequest, jwt_configured
+from app.auth import require_auth, require_identity_auth, optional_auth, AuthedRequest, identity_verification_status
 from app.receipts import create_mint_receipt, MintReceipt
 
 # Learning Hub imports
@@ -1389,7 +1389,8 @@ def root():
     """
     has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
-    identity_ready = jwt_configured()
+    identity_status = identity_verification_status()
+    identity_ready = identity_status["jwt_configured"]
     service_version = app.version
 
     return {
@@ -1403,10 +1404,8 @@ def root():
         },
         "auth": {
             "jwt_configured": identity_ready,
-            "identity_service": os.getenv(
-                "IDENTITY_API_BASE",
-                "https://mobius-identity-service.onrender.com",
-            ),
+            "identity_verification": identity_status,
+            "identity_service": identity_status["introspect"]["url"],
             "note": "Mint and wallet endpoints require Bearer token from mobius-identity-service",
         },
         "endpoints": {
