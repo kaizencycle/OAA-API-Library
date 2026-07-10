@@ -32,17 +32,14 @@ def _configured_secrets() -> list[str]:
 
 
 def jwt_configured() -> bool:
-    """True when a non-default identity verification path is configured."""
+    """True when identity verification is wired (local secret, JWKS, or introspect)."""
     if _configured_secrets():
         return True
     if (os.getenv("MOBIUS_IDENTITY_JWKS_URL") or "").strip():
         return True
-    base = (
-        os.getenv("MOBIUS_IDENTITY_INTROSPECT_URL")
-        or os.getenv("IDENTITY_API_BASE")
-        or ""
-    ).strip()
-    return bool(base)
+    # Introspect delegation to mobius-identity-service is always wired in production
+    # (see verify_identity_via_introspect default base URL).
+    return True
 
 
 def _claims_from_payload(payload: dict) -> Optional[AuthClaims]:
