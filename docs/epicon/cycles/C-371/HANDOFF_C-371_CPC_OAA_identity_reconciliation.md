@@ -40,9 +40,13 @@ Phase 1 Sentinel identity issuance should remain **consistent with** this human-
 
 ---
 
-## Sentinel roster (10 active)
+## Sentinel roster (10 active — Phase 1 target)
 
 ATLAS, ZEUS, EVE, JADE, AUREA, HERMES, ECHO, DAEDALUS, URIEL, ZENITH
+
+**Seal quorum subset (5):** ATLAS, ZEUS, EVE, JADE, AUREA — per `mobius-civic-ai-terminal` `SENTINEL_AGENTS`.
+
+**Explicitly excluded from Phase 1 Sentinel identity:** SOLARA — legacy OAA research companion in `consensus.ts`; not a Mobius Sentinel. See Phase 1 intent § Roster reconciliation.
 
 **Currently named in OAA hub config (4):** `GIC_COMPANION_LABELS` = jade, zeus, eve, hermes (`render.yaml`)
 
