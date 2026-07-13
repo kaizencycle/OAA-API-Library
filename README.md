@@ -191,7 +191,9 @@ Each cycle generates:
 
 ```
 ├── docs/
-│   └── OAA_PREFACE.md          # Core context (always-in-context)
+│   ├── systems/                # AGENT_LOOP_GUARD, BEACON, CITATION, EOMM, JADE, optimizations
+│   ├── deployment/             # Render deployment, Copilot verification
+│   └── epicon/cycles/          # EPICON intents and handoffs
 ├── lib/
 │   ├── crypto/
 │   │   ├── hmac.ts            # HMAC validation
