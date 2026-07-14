@@ -16,7 +16,7 @@
 | `aws-sdk` v2 | **Removed from root `package.json`** | Grep found zero `aws-sdk` v2 imports. `src/packs/voice-polly` uses `@aws-sdk/client-polly` (v3) separately. v2 was a dead root dependency. |
 | GIC → MIC (metadata) | `package.json` keyword `gic` → `mic` | Legacy `gic-indexer/` subsystem names unchanged — separate scoped rename if custodian wants full subsystem migration. |
 | Doc consolidation | Root system/deployment docs moved to `docs/systems/` and `docs/deployment/` | See directory listing in PR. `README.md` stays at root. |
-| Test runner | **Consolidated to Vitest** | All 3 test files live under `tests/` and run via Vitest (`vitest.config.ts`). Jest had zero test files and no `jest.config`. `npm test` now runs `vitest run`. Jest, `@types/jest`, and `ts-jest` removed. |
+| Test runner | **Consolidated to Vitest** | 9 test files / 26 tests under `tests/`. `@vitest/coverage-v8` enforces 80% line coverage on `lib/**` in CI (`vitest.config.ts` thresholds). |
 | TypeScript | Bumped `^5.0.0` → `^5.9.3` | Routine currency toward terminal parity. |
 
 ---

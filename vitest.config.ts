@@ -9,6 +9,12 @@ export default defineConfig({
       reporter: ["text", "text-summary", "html"],
       include: ["lib/**/*.ts"],
       exclude: ["**/*.test.ts", "**/node_modules/**"],
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        branches: 70,
+        functions: 80,
+      },
     },
   },
 });
