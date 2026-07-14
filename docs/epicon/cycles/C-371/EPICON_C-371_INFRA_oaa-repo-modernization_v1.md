@@ -45,12 +45,14 @@ counterfactuals:
 
 ## Acceptance criteria
 
-- [ ] `@anthropic-ai/sdk` bumped or breaking-change follow-up filed with rationale
-- [ ] Accidental `crypto` npm dependency removed if grep confirms unused
-- [ ] GIC → MIC sweep in docs and `package.json` keywords (where applicable)
-- [ ] No identity-mechanism or Phase 1/2/3 scope creep in modernization PRs
-- [ ] Doc consolidation PR or filed deferral with custodian ack
-- [ ] jest/vitest decision documented before runner consolidation
+- [x] `@anthropic-ai/sdk` bumped or breaking-change follow-up filed with rationale
+- [x] Accidental `crypto` npm dependency removed if grep confirms unused
+- [x] GIC → MIC sweep in docs and `package.json` keywords (where applicable)
+- [x] No identity-mechanism or Phase 1/2/3 scope creep in modernization PRs
+- [x] Doc consolidation PR or filed deferral with custodian ack
+- [x] jest/vitest decision documented before runner consolidation
+
+See [`MODERNIZATION_DECISIONS_C-371.md`](./MODERNIZATION_DECISIONS_C-371.md) for implementation evidence.
 
 ---
 

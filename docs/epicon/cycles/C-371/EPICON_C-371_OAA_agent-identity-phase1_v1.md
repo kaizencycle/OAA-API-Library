@@ -80,7 +80,7 @@ in legacy OAA consensus code.
 ### SOLARA disposition (Codex P2 resolution)
 
 `SOLARA` appears in legacy OAA consensus tooling (`pages/api/oaa/companions/consensus.ts`,
-`scripts/test-oaa-optimizations.mjs`, `OAA_OPTIMIZATIONS_README.md`) but is **not** a
+`scripts/test-oaa-optimizations.mjs`, `docs/systems/OAA_OPTIMIZATIONS_README.md`) but is **not** a
 Mobius Sentinel and is **not** in the 10-agent Phase 1 target.
 
 **Custodian classification:** `legacy_oaa_research_companion` — invokable for research-tier

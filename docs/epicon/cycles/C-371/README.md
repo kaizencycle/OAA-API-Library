@@ -9,3 +9,4 @@
 | [`HANDOFF_C-371_CPC_OAA_identity_reconciliation.md`](./HANDOFF_C-371_CPC_OAA_identity_reconciliation.md) | CPC (human) vs OAA (agent) identity split |
 | [`HANDOFF_C-371_OAA_repo-modernization.md`](./HANDOFF_C-371_OAA_repo-modernization.md) | **ATLAS handoff** — deps + structural cleanup |
 | [`EPICON_C-371_INFRA_oaa-repo-modernization_v1.md`](./EPICON_C-371_INFRA_oaa-repo-modernization_v1.md) | Maintenance EPICON intent (companion to repo handoff) |
+| [`MODERNIZATION_DECISIONS_C-371.md`](./MODERNIZATION_DECISIONS_C-371.md) | **Implementation decisions** — deps, test runner, architecture confirmations |
