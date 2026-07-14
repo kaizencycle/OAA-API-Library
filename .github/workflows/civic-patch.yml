@@ -133,7 +133,7 @@ jobs:
 
       - name: Check test coverage threshold
         run: |
-          COVERAGE=$(npm run test -- --coverage --coverageReporters=text-summary | grep -o 'All files[^0-9]*[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*$')
+          COVERAGE=$(npm run test -- --coverage | grep -o 'All files[^0-9]*[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*$')
           echo "Test coverage: ${COVERAGE}%"
           if (( $(echo "$COVERAGE < $CIVIC_TEST_COVERAGE_THRESHOLD" | bc -l) )); then
             echo "❌ Test coverage ${COVERAGE}% is below threshold ${CIVIC_TEST_COVERAGE_THRESHOLD}%"
