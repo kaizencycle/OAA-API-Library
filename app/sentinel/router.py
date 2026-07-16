@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from app.sentinel import adapters, attestations
 from app.sentinel.auth import verify_agent_hmac
@@ -42,13 +43,14 @@ async def sentinel_review(request: Request) -> SentinelReviewResponse:
     for raw_name in payload.sentinels:
         name = adapters.normalize_sentinel_name(raw_name)
         if name == "aurea":
-            verdict = adapters.review_aurea(payload.context)
+            verdict = await run_in_threadpool(adapters.review_aurea, payload.context)
         elif name == "atlas":
-            verdict = adapters.review_atlas(payload.context)
+            verdict = await run_in_threadpool(adapters.review_atlas, payload.context)
         else:
             raise HTTPException(status_code=400, detail=f"Unknown sentinel: {raw_name}")
 
-        attestation_id, persisted = attestations.persist_attestation(
+        attestation_id, persisted = await run_in_threadpool(
+            attestations.persist_attestation,
             sentinel=verdict.sentinel,
             context_hash=payload.context_hash,
             verdict=verdict.verdict,
