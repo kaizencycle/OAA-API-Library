@@ -104,3 +104,4 @@ data/kv-bridge.json
 data/eomm/_invalid/
 out/proof-backrefs.json
 *.oaa.yaml.bak
+__pycache__/
