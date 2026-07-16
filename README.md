@@ -1,3 +1,5 @@
+> **Legacy epoch notice (~C-108, 2025)** — This repository is a **historical record** from the pre-Mobius Open Autonomous Academy epoch. It is **superseded** by [Mobius Substrate](https://github.com/kaizencycle/Mobius-Substrate) and the canonical [OAA Charter](https://github.com/kaizencycle/Mobius-Substrate/blob/main/docs/OAA_CHARTER.md), which declares the canonical expansion: **Open Attestation Authority** (Authority + Hub + Academy). The live console at [oaa.onrender.com](https://oaa.onrender.com) is not modified by this notice. For current OAA vision, floors, and sequencing gates, read the charter — do not treat this README's vocabulary as current canon.
+
 # OAA API Library - Integrity-First AI Governance Loop
 
 The Open Autonomous Academy (OAA) Hub provides a comprehensive system for AI governance, companion management, and integrity tracking through cryptographic proofs and civic ledger integration.
