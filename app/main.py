@@ -36,6 +36,7 @@ from app.models.learning import (
 from app.services.learning_store import learning_store
 from app.services.mic_minting import MICMintingService
 from app.services.mic_ledger_store import mic_ledger_store
+from app.sentinel import sentinel_router
 
 # Initialize services
 mic_service = MICMintingService()
@@ -61,6 +62,9 @@ ORIGINS = DEFAULT_ORIGINS + extra_origins
 VERCEL_PREVIEW_PATTERN = re.compile(r"^https://mobius-browser-shell(-[a-z0-9]+-[a-z0-9]+-projects)?(-[a-z0-9]+)*\.vercel\.app$")
 
 app = FastAPI(title="OAA-API-Library", version="0.4.0")
+
+# Floor 1 — sentinel broker (isolated router; no wallet/tutor shared state)
+app.include_router(sentinel_router, prefix="/v1")
 
 # Custom CORS middleware to handle Vercel preview deployments
 @app.middleware("http")
@@ -307,6 +311,12 @@ AGENTS: dict[str, AgentSpec] = {}
 @app.get("/health")
 def health():
     return {"ok": True, "ts": time.time()}
+
+
+@app.get("/healthz")
+def healthz():
+    """Alias for orchestrators expecting /healthz (C-373 broker ops)."""
+    return health()
 
 @app.post("/agents/register")
 def register_agent(spec: AgentSpec):

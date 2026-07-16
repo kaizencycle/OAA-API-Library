@@ -65,7 +65,21 @@ export EVE_HMAC_SECRET=your-secret
 | `LEDGER_ADMIN_TOKEN` | Ledger authentication token | Required |
 | `DEV_MODE` | Enable dev routes | `1` |
 
-## 📚 API Endpoints
+### C-373 Sentinel Review Broker (Floor 1)
+
+`POST /v1/sentinel/review` — HMAC-authenticated sentinel inference broker for Mobius CI.
+
+| Variable | Description |
+|----------|-------------|
+| `MOBIUS_CI_SENTINEL_HMAC_KEY` | Per-agent HMAC secret for `x-oaa-agent: mobius-ci-sentinel` |
+| `DATABASE_URL` | **Required for production** — Postgres for attestation buffer (`sentinel_review_attestations`) |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Vendor keys live on broker Render env only (relocated from CI secrets) |
+| `PROMPT_VERSION` | Pinned `c373-v1` in code — CI must match |
+
+**HMAC rotation:** generate a new secret, set `MOBIUS_CI_SENTINEL_HMAC_KEY` on Render and in GitHub Actions (`MOBIUS_CI_SENTINEL_HMAC_KEY`), deploy broker, then revoke the old value.
+
+**Floor separation:** sentinel router is isolated (`app/sentinel/`); logical-not-physical co-deploy with tutor/wallet/learning paths until Phase B/C split.
+
 
 ### Memory API (`/api/oaa/memory`)
 
