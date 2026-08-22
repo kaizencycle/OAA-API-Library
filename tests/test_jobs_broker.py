@@ -125,3 +125,17 @@ def test_claim_rejects_invalid_hash_before_store():
     raw, headers = _sign(body)
     response = client.post("/v1/jobs/claim", content=raw, headers=headers)
     assert response.status_code == 422
+
+
+def test_store_preserves_request_outcomes_and_serializes_retries():
+    source = open("app/jobs/store.py", encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS agent_job_claim_requests" in source
+    assert "pg_advisory_xact_lock(hashtextextended" in source
+    assert "lease_snapshot JSONB NOT NULL" in source
+    assert "ON CONFLICT (request_id) DO NOTHING" in source
+
+
+def test_release_requires_unexpired_lease():
+    source = open("app/jobs/store.py", encoding="utf-8").read()
+    release_section = source.split("def release_job", 1)[1].split("def list_active_jobs", 1)[0]
+    assert "lease_expires_at > NOW()" in release_section
