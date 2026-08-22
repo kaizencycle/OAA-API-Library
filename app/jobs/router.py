@@ -13,6 +13,7 @@ from app.jobs.models import (
 from app.jobs.store import (
     ActiveClaimConflict,
     LeaseNotActive,
+    RequestIdReuse,
     claim_job,
     heartbeat_job,
     list_active_jobs,
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/jobs", tags=["atomic-job-broker"])
 @router.post("/claim", response_model=JobClaimResponse)
 async def claim(request: Request) -> JobClaimResponse:
     raw_body = await request.body()
-    agent_id = await verify_agent_hmac(request, raw_body)
+    agent_id = await verify_agent_hmac(request, raw_body, allow_legacy=False)
     try:
         payload = JobClaimRequest.model_validate_json(raw_body)
         lease = await run_in_threadpool(claim_job, agent_id=agent_id, payload=payload.model_dump())
@@ -37,6 +38,11 @@ async def claim(request: Request) -> JobClaimResponse:
             status_code=409,
             detail={"code": "ACTIVE_CLAIM_CONFLICT", "incumbent": exc.incumbent},
         ) from exc
+    except RequestIdReuse as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "REQUEST_ID_REUSE", "original": exc.original},
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return JobClaimResponse(lease=JobLease.model_validate(lease))
@@ -45,7 +51,7 @@ async def claim(request: Request) -> JobClaimResponse:
 @router.post("/heartbeat", response_model=JobClaimResponse)
 async def heartbeat(request: Request) -> JobClaimResponse:
     raw_body = await request.body()
-    agent_id = await verify_agent_hmac(request, raw_body)
+    agent_id = await verify_agent_hmac(request, raw_body, allow_legacy=False)
     try:
         payload = JobHeartbeatRequest.model_validate_json(raw_body)
         lease = await run_in_threadpool(
@@ -66,7 +72,7 @@ async def heartbeat(request: Request) -> JobClaimResponse:
 @router.post("/release", response_model=JobClaimResponse)
 async def release(request: Request) -> JobClaimResponse:
     raw_body = await request.body()
-    agent_id = await verify_agent_hmac(request, raw_body)
+    agent_id = await verify_agent_hmac(request, raw_body, allow_legacy=False)
     try:
         payload = JobReleaseRequest.model_validate_json(raw_body)
         lease = await run_in_threadpool(release_job, agent_id=agent_id, payload=payload.model_dump())
@@ -81,7 +87,7 @@ async def release(request: Request) -> JobClaimResponse:
 
 @router.get("/active", response_model=ActiveJobsResponse)
 async def active(request: Request, job_id: str | None = Query(default=None, max_length=128)) -> ActiveJobsResponse:
-    agent_id = await verify_agent_hmac(request, b"")
+    agent_id = await verify_agent_hmac(request, b"", allow_legacy=False)
     del agent_id  # authentication is required; identity is not used to filter the shared board
     try:
         jobs = await run_in_threadpool(list_active_jobs, job_id=job_id)
