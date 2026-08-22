@@ -64,13 +64,27 @@ class LeaseNotActive(Exception):
     pass
 
 
+class RequestIdReuse(Exception):
+    def __init__(self, original: dict[str, Any]):
+        super().__init__("request_id was already consumed by a different request tuple")
+        self.original = original
+
+
+class JobStoreUnavailable(RuntimeError):
+    pass
+
+
 def _connect():
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for atomic job leasing")
-    import psycopg2  # noqa: PLC0415
+    try:
+        import psycopg2  # noqa: PLC0415
 
-    return psycopg2.connect(database_url)
+        return psycopg2.connect(database_url)
+    except Exception as exc:
+        logger.exception("Atomic job store connection failed")
+        raise JobStoreUnavailable("atomic job store is unavailable") from exc
 
 
 def _row_to_lease(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -143,7 +157,15 @@ def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                     and existing_request[3] == payload["evidence_hash"]
                 )
                 if not same_request:
-                    raise ActiveClaimConflict(existing_request[4])
+                    raise RequestIdReuse(
+                        {
+                            "request_id": payload["request_id"],
+                            "job_id": existing_request[0],
+                            "agent_id": existing_request[1],
+                            "runtime_id": existing_request[2],
+                            "evidence_hash": existing_request[3],
+                        }
+                    )
                 conn.commit()
                 return existing_request[4]
 
