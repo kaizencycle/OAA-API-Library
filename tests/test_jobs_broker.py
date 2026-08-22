@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.jobs.store import ActiveClaimConflict, LeaseNotActive
+from app.jobs.store import ActiveClaimConflict, JobStoreUnavailable, LeaseNotActive, RequestIdReuse
 from app.main import app
 
 client = TestClient(app)
@@ -125,6 +125,40 @@ def test_claim_rejects_invalid_hash_before_store():
     raw, headers = _sign(body)
     response = client.post("/v1/jobs/claim", content=raw, headers=headers)
     assert response.status_code == 422
+
+
+@patch("app.jobs.router.claim_job")
+def test_request_id_reuse_is_not_reported_as_live_incumbent(mock_claim):
+    mock_claim.side_effect = RequestIdReuse(
+        {
+            "request_id": "request-c410-0001",
+            "job_id": "JOB-C410-OLD",
+            "agent_id": "mobius-atlas",
+            "runtime_id": "atlas-old",
+            "evidence_hash": "sha256:" + "b" * 64,
+        }
+    )
+    raw, headers = _sign(_claim_body())
+    response = client.post("/v1/jobs/claim", content=raw, headers=headers)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "REQUEST_ID_REUSE"
+    assert "incumbent" not in response.json()["detail"]
+
+
+@patch("app.jobs.router.claim_job")
+def test_store_outage_is_service_unavailable(mock_claim):
+    mock_claim.side_effect = JobStoreUnavailable("atomic job store is unavailable")
+    raw, headers = _sign(_claim_body())
+    response = client.post("/v1/jobs/claim", content=raw, headers=headers)
+    assert response.status_code == 503
+
+
+def test_job_routes_reject_legacy_shared_sentinel_key(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("MOBIUS_CODEX_HMAC_KEY", raising=False)
+    monkeypatch.setenv("OAA_SENTINEL_HMAC_KEY", SECRET)
+    raw, headers = _sign(_claim_body())
+    response = client.post("/v1/jobs/claim", content=raw, headers=headers)
+    assert response.status_code == 401
 
 
 def test_store_preserves_request_outcomes_and_serializes_retries():
