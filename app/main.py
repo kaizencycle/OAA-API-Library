@@ -37,6 +37,7 @@ from app.services.learning_store import learning_store
 from app.services.mic_minting import MICMintingService
 from app.services.mic_ledger_store import mic_ledger_store
 from app.sentinel import sentinel_router
+from app.jobs import jobs_router
 
 # Initialize services
 mic_service = MICMintingService()
@@ -65,6 +66,8 @@ app = FastAPI(title="OAA-API-Library", version="0.4.0")
 
 # Floor 1 — sentinel broker (isolated router; no wallet/tutor shared state)
 app.include_router(sentinel_router, prefix="/v1")
+# C-410 Phase 2 — assignment leases only; never execution authority.
+app.include_router(jobs_router, prefix="/v1")
 
 # Custom CORS middleware to handle Vercel preview deployments
 @app.middleware("http")
