@@ -58,6 +58,9 @@ the same original lease result instead of a false collision.
 ## Fail-closed rules
 
 - `DATABASE_URL` is mandatory; the broker returns 503 rather than using process memory.
+- Unreachable Postgres and rejected database credentials are normalized to 503.
+- Job ownership requires a runtime-specific `*_HMAC_KEY`; the legacy shared
+  sentinel key is never accepted by `/v1/jobs/*`.
 - Lease duration is bounded to 5–120 minutes.
 - Heartbeat requires the original agent and a non-expired active claim.
 - Release requires the original agent and an active claim.
@@ -65,6 +68,8 @@ the same original lease result instead of a false collision.
 - Every database write forces `execution_authorized = false`.
 - A lease proves assignment only; it cannot satisfy quorum, human approval, merge, deployment, seal, MIC, GI, or Track R authority.
 - Notion remains a human-readable projection and must never be trusted as the atomic lock.
+- Reusing a consumed request ID with a different tuple returns
+  `REQUEST_ID_REUSE`, never a false live-incumbent claim.
 
 ## Homeroom projection
 
