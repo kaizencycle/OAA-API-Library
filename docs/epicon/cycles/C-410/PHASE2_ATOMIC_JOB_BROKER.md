@@ -50,7 +50,10 @@ All endpoints require the existing per-agent HMAC envelope.
 
 Postgres enforces one row per `job_id`. Claim uses a conditional `INSERT ... ON CONFLICT DO UPDATE ... WHERE` statement. An unexpired active lease cannot be overwritten. Losers receive HTTP 409 with `ACTIVE_CLAIM_CONFLICT` and the incumbent assignment.
 
-Each transition appends an audit event. Repeated `request_id` values are idempotent for the same authenticated agent.
+Each transition appends an audit event. Immutable request outcomes preserve
+consumed `request_id` values across lease reassignment. A transaction-scoped
+Postgres advisory lock serializes concurrent identical retries so they return
+the same original lease result instead of a false collision.
 
 ## Fail-closed rules
 
@@ -58,6 +61,7 @@ Each transition appends an audit event. Repeated `request_id` values are idempot
 - Lease duration is bounded to 5–120 minutes.
 - Heartbeat requires the original agent and a non-expired active claim.
 - Release requires the original agent and an active claim.
+- Release rejects an expired lease even if its stored state still says `active`.
 - Every database write forces `execution_authorized = false`.
 - A lease proves assignment only; it cannot satisfy quorum, human approval, merge, deployment, seal, MIC, GI, or Track R authority.
 - Notion remains a human-readable projection and must never be trusted as the atomic lock.
