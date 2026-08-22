@@ -14,7 +14,7 @@ Proposed implementation. Human merge and deployment are required. No production 
 ```intent
 epicon_id: EPICON_C-410_CODE_atomic-job-broker_v1
 ledger_id: mobius:kaizencycle
-scope: core, infra, docs, specs
+scope: core
 mode: normal
 issued_at: 2026-08-22T12:45:00Z
 expires_at: 2026-11-20T12:45:00Z
