@@ -19,7 +19,7 @@ def agent_env_key(agent_id: str) -> str:
     return f"{normalized}{AGENT_HMAC_ENV_SUFFIX}"
 
 
-def resolve_agent_hmac_secret(agent_id: str) -> str | None:
+def resolve_agent_hmac_secret(agent_id: str, *, allow_legacy: bool = True) -> str | None:
     """
     Per-agent HMAC lookup. Phase 1 ships one consumer (mobius-ci-sentinel);
     key-per-agent is additive — new agents get their own *_HMAC_KEY env vars.
@@ -27,10 +27,17 @@ def resolve_agent_hmac_secret(agent_id: str) -> str | None:
     per_agent = os.getenv(agent_env_key(agent_id), "").strip()
     if per_agent:
         return per_agent
+    if not allow_legacy:
+        return None
     return os.getenv(LEGACY_SENTINEL_HMAC_ENV, "").strip() or None
 
 
-async def verify_agent_hmac(request: Request, raw_body: bytes) -> str:
+async def verify_agent_hmac(
+    request: Request,
+    raw_body: bytes,
+    *,
+    allow_legacy: bool = True,
+) -> str:
     agent_id = (request.headers.get("x-oaa-agent") or "").strip()
     timestamp = (request.headers.get("x-oaa-timestamp") or "").strip()
     signature = (request.headers.get("x-oaa-signature") or "").strip().lower()
@@ -41,7 +48,7 @@ async def verify_agent_hmac(request: Request, raw_body: bytes) -> str:
             detail=f"x-oaa-agent must carry '{AGENT_ID_PREFIX}' prefix",
         )
 
-    secret = resolve_agent_hmac_secret(agent_id)
+    secret = resolve_agent_hmac_secret(agent_id, allow_legacy=allow_legacy)
     if not secret:
         raise HTTPException(
             status_code=401,

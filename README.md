@@ -80,6 +80,16 @@ export EVE_HMAC_SECRET=your-secret
 
 **Floor separation:** sentinel router is isolated (`app/sentinel/`); logical-not-physical co-deploy with tutor/wallet/learning paths until Phase B/C split.
 
+### C-410 Atomic Job Broker (Phase 2)
+
+The isolated `/v1/jobs/*` router provides HMAC-authenticated, Postgres-backed
+assignment leases for Mobius Homeroom. It supports atomic claim, heartbeat,
+release, and active-claim reads. A lease proves assignment only and always
+returns `execution_authorized: false`; it does not grant merge, deployment,
+seal, financial, quorum, or human authority.
+
+See [`docs/epicon/cycles/C-410/PHASE2_ATOMIC_JOB_BROKER.md`](docs/epicon/cycles/C-410/PHASE2_ATOMIC_JOB_BROKER.md).
+
 
 ### Memory API (`/api/oaa/memory`)
 
