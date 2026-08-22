@@ -11,6 +11,30 @@ Proposed implementation. Human merge and deployment are required. No production 
 - Execution authority: always false
 - Canon flow: Homeroom projection → broker lease → EPICON/GitHub evidence → Civic Ledger acceptance
 
+```intent
+epicon_id: EPICON_C-410_CODE_atomic-job-broker_v1
+ledger_id: mobius:kaizencycle
+scope: core, infra, docs, specs
+mode: normal
+issued_at: 2026-08-22T12:45:00Z
+expires_at: 2026-11-20T12:45:00Z
+justification: |
+  VALUES INVOKED: integrity, transparency, custodianship, safety
+  REASONING: Homeroom needs an atomic assignment lease authority so autonomous runtimes cannot unknowingly claim the same job.
+  ANCHORS:
+    - app/jobs/store.py
+    - tests/test_jobs_broker.py
+    - docs/epicon/cycles/C-410/PHASE2_ATOMIC_JOB_BROKER.md
+    - mobius.yaml
+  BOUNDARIES: Assignment only. No execution authority, production mutation, GI, MIC, seal, Track R apply, or autonomous merge.
+  COUNTERFACTUAL: If durable Postgres or HMAC identity is unavailable, fail closed and do not issue a lease.
+counterfactuals:
+  - If two concurrent clients can both obtain an active lease for one job_id, do not deploy.
+  - If DATABASE_URL absence permits an in-memory or process-local lease, do not merge.
+  - If any transition can set execution_authorized true, revert the broker change.
+  - If a Notion projection can override broker state, keep Phase 2 disabled.
+```
+
 ## API
 
 All endpoints require the existing per-agent HMAC envelope.
