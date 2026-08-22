@@ -99,6 +99,19 @@ retention:
 
 jobs:
   enabled: true
+  assignment_broker:
+    phase: 2
+    authority: "assignment_only"
+    atomic_store: "postgres"
+    hmac_required: true
+    execution_authorized: false
+    endpoints:
+      claim: "/v1/jobs/claim"
+      heartbeat: "/v1/jobs/heartbeat"
+      release: "/v1/jobs/release"
+      active: "/v1/jobs/active"
+    homeroom_projection: "notion"
+    fail_closed_without_database: true
   status_values:
     - active
     - manual
