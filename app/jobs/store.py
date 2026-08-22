@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS agent_job_lease_events (
 );
 CREATE INDEX IF NOT EXISTS agent_job_lease_events_job_idx
     ON agent_job_lease_events (job_id, created_at);
+CREATE TABLE IF NOT EXISTS agent_job_claim_requests (
+    request_id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    runtime_id TEXT NOT NULL,
+    evidence_hash TEXT NOT NULL,
+    lease_snapshot JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
@@ -112,20 +121,31 @@ def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         with conn.cursor() as cur:
             cur.execute(_SCHEMA_SQL)
-            cur.execute(f"SELECT {_RETURNING} FROM agent_job_leases WHERE request_id = %s", (payload["request_id"],))
+            # Serialize identical request IDs before checking their immutable
+            # outcomes. This makes concurrent retries return the same lease.
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (payload["request_id"],),
+            )
+            cur.execute(
+                """
+                SELECT job_id, agent_id, runtime_id, evidence_hash, lease_snapshot
+                FROM agent_job_claim_requests WHERE request_id = %s
+                """,
+                (payload["request_id"],),
+            )
             existing_request = cur.fetchone()
             if existing_request:
-                lease = _row_to_lease(existing_request)
                 same_request = (
-                    lease["agent_id"] == agent_id
-                    and lease["job_id"] == payload["job_id"]
-                    and lease["runtime_id"] == payload["runtime_id"]
-                    and lease["evidence_hash"] == payload["evidence_hash"]
+                    existing_request[0] == payload["job_id"]
+                    and existing_request[1] == agent_id
+                    and existing_request[2] == payload["runtime_id"]
+                    and existing_request[3] == payload["evidence_hash"]
                 )
                 if not same_request:
-                    raise ActiveClaimConflict(lease)
+                    raise ActiveClaimConflict(existing_request[4])
                 conn.commit()
-                return lease
+                return existing_request[4]
 
             cur.execute(
                 f"""
@@ -168,8 +188,32 @@ def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             row = cur.fetchone()
             if row is None:
                 cur.execute(f"SELECT {_RETURNING} FROM agent_job_leases WHERE job_id = %s", (payload["job_id"],))
-                raise ActiveClaimConflict(_row_to_lease(cur.fetchone()))
-            lease = _row_to_lease(row)
+                incumbent = _row_to_lease(cur.fetchone())
+                # A same-request incumbent can exist if an older deployment
+                # wrote the lease before the immutable request table existed.
+                same_request = (
+                    incumbent["request_id"] == payload["request_id"]
+                    and incumbent["agent_id"] == agent_id
+                    and incumbent["runtime_id"] == payload["runtime_id"]
+                    and incumbent["evidence_hash"] == payload["evidence_hash"]
+                )
+                if not same_request:
+                    raise ActiveClaimConflict(incumbent)
+                lease = incumbent
+            else:
+                lease = _row_to_lease(row)
+            cur.execute(
+                """
+                INSERT INTO agent_job_claim_requests
+                    (request_id, job_id, agent_id, runtime_id, evidence_hash, lease_snapshot)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (request_id) DO NOTHING
+                """,
+                (
+                    payload["request_id"], payload["job_id"], agent_id,
+                    payload["runtime_id"], payload["evidence_hash"], json.dumps(lease),
+                ),
+            )
             _record_event(cur, lease, "claimed", {"request_id": payload["request_id"]})
         conn.commit()
         return lease
@@ -224,6 +268,7 @@ def release_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                 SET state = %s, released_at = NOW(), outcome = %s::jsonb,
                     version = version + 1, updated_at = NOW(), execution_authorized = FALSE
                 WHERE claim_id = %s AND agent_id = %s AND state = 'active'
+                  AND lease_expires_at > NOW()
                 RETURNING {_RETURNING}
                 """,
                 (payload["outcome"], json.dumps(payload), payload["claim_id"], agent_id),
