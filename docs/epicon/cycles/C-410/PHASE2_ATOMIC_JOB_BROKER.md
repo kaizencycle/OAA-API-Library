@@ -26,8 +26,8 @@ git diff --check
 - **CI workflow:** `.github/workflows/oaa-atomic-job-broker.yml` — job **OAA Atomic Job Broker Tests**
 - **PostgreSQL isolation:** GitHub Actions `postgres:16` service; `DATABASE_URL=postgresql://oaa_test:oaa_test_password@localhost:5432/oaa_job_broker_test` (test fixtures only)
 - **Production access:** false — tests refuse non-localhost `DATABASE_URL`
-- **Workflow run:** see PR checks (updated after push)
-- **Final commit SHA:** see PR head (updated after push)
+- **Workflow run:** https://github.com/kaizencycle/OAA-API-Library/actions/runs/32609978549
+- **Final commit SHA:** `25a68b0f91418dd883ab83c0ec03263d0a2da860`
 
 ## Intent
 
