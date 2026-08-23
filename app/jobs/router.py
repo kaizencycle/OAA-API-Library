@@ -12,6 +12,7 @@ from app.jobs.models import (
 )
 from app.jobs.store import (
     ActiveClaimConflict,
+    JobStoreUnavailable,
     LeaseNotActive,
     RequestIdReuse,
     claim_job,
@@ -43,6 +44,8 @@ async def claim(request: Request) -> JobClaimResponse:
             status_code=409,
             detail={"code": "REQUEST_ID_REUSE", "original": exc.original},
         ) from exc
+    except JobStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="atomic job store is unavailable") from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return JobClaimResponse(lease=JobLease.model_validate(lease))
@@ -64,6 +67,8 @@ async def heartbeat(request: Request) -> JobClaimResponse:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
     except LeaseNotActive as exc:
         raise HTTPException(status_code=409, detail={"code": "LEASE_NOT_ACTIVE"}) from exc
+    except JobStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="atomic job store is unavailable") from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return JobClaimResponse(lease=JobLease.model_validate(lease))
@@ -80,6 +85,8 @@ async def release(request: Request) -> JobClaimResponse:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
     except LeaseNotActive as exc:
         raise HTTPException(status_code=409, detail={"code": "LEASE_NOT_ACTIVE"}) from exc
+    except JobStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="atomic job store is unavailable") from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return JobClaimResponse(lease=JobLease.model_validate(lease))
@@ -91,6 +98,8 @@ async def active(request: Request, job_id: str | None = Query(default=None, max_
     del agent_id  # authentication is required; identity is not used to filter the shared board
     try:
         jobs = await run_in_threadpool(list_active_jobs, job_id=job_id)
+    except JobStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail="atomic job store is unavailable") from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return ActiveJobsResponse(jobs=[JobLease.model_validate(job) for job in jobs])
