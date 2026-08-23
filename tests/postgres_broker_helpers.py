@@ -9,6 +9,7 @@ import os
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 import psycopg2
 import pytest
@@ -23,13 +24,23 @@ EVIDENCE_A = "sha256:" + "a" * 64
 EVIDENCE_B = "sha256:" + "b" * 64
 
 
+def _is_loopback_host(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    normalized = hostname.lower().strip("[]")
+    return normalized in {"localhost", "127.0.0.1", "::1"}
+
+
 def require_test_database_url() -> str:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url:
         pytest.skip("DATABASE_URL not configured — isolated PostgreSQL required")
-    lowered = database_url.lower()
-    if "localhost" not in lowered and "127.0.0.1" not in lowered:
-        pytest.skip("DATABASE_URL must target isolated CI PostgreSQL (localhost)")
+    parsed = urlparse(database_url)
+    if not _is_loopback_host(parsed.hostname):
+        pytest.skip(
+            "DATABASE_URL must target isolated CI PostgreSQL "
+            f"(loopback hostname required, got {parsed.hostname!r})"
+        )
     return database_url
 
 

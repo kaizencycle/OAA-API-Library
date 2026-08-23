@@ -160,21 +160,30 @@ def _live_active_lease(cur, job_id: str) -> dict[str, Any] | None:
     return _row_to_lease(row) if row else None
 
 
+def _acquire_claim_locks(cur, *, job_id: str, request_id: str) -> None:
+    lock_keys = sorted(
+        [
+            f"job:{job_id}",
+            f"request:{request_id}",
+        ]
+    )
+    for lock_key in lock_keys:
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (lock_key,),
+        )
+
+
 def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     claim_id = str(uuid.uuid4())
     conn = _connect()
     try:
         _ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (payload["job_id"],),
-            )
-            # Serialize identical request IDs before checking their immutable
-            # outcomes. This makes concurrent retries return the same lease.
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (payload["request_id"],),
+            _acquire_claim_locks(
+                cur,
+                job_id=payload["job_id"],
+                request_id=payload["request_id"],
             )
             cur.execute(
                 """
@@ -205,9 +214,17 @@ def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                 live = _live_active_lease(cur, payload["job_id"])
                 if live and live["claim_id"] != cached.get("claim_id"):
                     raise ActiveClaimConflict(live)
-                if live and live["claim_id"] == cached.get("claim_id"):
-                    conn.commit()
-                    return live
+                if live is None:
+                    cur.execute(
+                        f"SELECT {_RETURNING} FROM agent_job_leases WHERE job_id = %s",
+                        (payload["job_id"],),
+                    )
+                    row = cur.fetchone()
+                    if row is not None:
+                        current = _row_to_lease(row)
+                        if current["claim_id"] == cached.get("claim_id"):
+                            conn.commit()
+                            return current
                 conn.commit()
                 return cached
 

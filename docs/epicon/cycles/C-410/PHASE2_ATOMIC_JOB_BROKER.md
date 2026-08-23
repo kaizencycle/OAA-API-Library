@@ -12,8 +12,8 @@ Implementation merged via PR #58. C-411 verification adds isolated PostgreSQL in
 - **Verification branch:** `cursor/c411-oaa-broker-ci-verification-0e02`
 - **Follow-up to:** [PR #58](https://github.com/kaizencycle/OAA-API-Library/pull/58) (merged)
 - **Unit tests:** 16 passed (`tests/test_jobs_broker.py`, `tests/test_sentinel_auth.py`)
-- **PostgreSQL integration tests:** 14 passed (`tests/test_jobs_broker_postgres_integration.py`)
-- **Total broker verification:** 30 passed
+- **PostgreSQL integration tests:** 15 passed (`tests/test_jobs_broker_postgres_integration.py`)
+- **Total broker verification:** 31 passed
 - **Commands executed locally (isolated PostgreSQL):**
 
 ```bash
@@ -25,6 +25,7 @@ git diff --check
 
 - **CI workflow:** `.github/workflows/oaa-atomic-job-broker.yml` — job **OAA Atomic Job Broker Tests**
 - **PostgreSQL isolation:** GitHub Actions `postgres:16` service; `DATABASE_URL=postgresql://oaa_test:oaa_test_password@localhost:5432/oaa_job_broker_test` (test fixtures only)
+- **PostgreSQL version (CI witness):** PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2)
 - **Production access:** false — tests refuse non-localhost `DATABASE_URL`
 - **Workflow run:** https://github.com/kaizencycle/OAA-API-Library/actions/runs/32609978549
 - **Final commit SHA:** `25a68b0f91418dd883ab83c0ec03263d0a2da860`

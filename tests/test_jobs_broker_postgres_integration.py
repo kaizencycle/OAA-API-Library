@@ -91,10 +91,33 @@ def test_concurrent_identical_request_id_returns_same_claim(database_url: str):
         return payload["lease"]
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        leases = [pool.submit(attempt).result() for _ in range(2)]
+        futures = [pool.submit(attempt) for _ in range(2)]
+        leases = [future.result() for future in futures]
 
     assert leases[0]["claim_id"] == leases[1]["claim_id"]
     assert fetch_lease(database_url, job_id)["claim_id"] == leases[0]["claim_id"]
+
+
+def test_idempotent_retry_after_release_returns_terminal_state(database_url: str):
+    job_id = unique_job_id()
+    request_id = unique_request_id("req-released-retry")
+    body = claim_payload(job_id=job_id, request_id=request_id)
+    status, payload = _post_claim(CODEX_AGENT, CODEX_SECRET, body)
+    assert status == 200
+    claim_id = payload["lease"]["claim_id"]
+
+    release_body = {
+        "claim_id": claim_id,
+        "outcome": "released",
+        "note": "terminal state check",
+    }
+    raw, headers = sign_request(CODEX_AGENT, CODEX_SECRET, release_body)
+    assert client.post("/v1/jobs/release", content=raw, headers=headers).status_code == 200
+
+    retry_status, retry_payload = _post_claim(CODEX_AGENT, CODEX_SECRET, body)
+    assert retry_status == 200
+    assert retry_payload["lease"]["state"] == "released"
+    assert retry_payload["lease"]["claim_id"] == claim_id
 
 
 def test_request_id_reuse_with_different_tuple(database_url: str):
