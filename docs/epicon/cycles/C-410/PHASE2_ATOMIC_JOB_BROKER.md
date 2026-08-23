@@ -2,7 +2,33 @@
 
 ## Status
 
-Proposed implementation. Human merge and deployment are required. No production state was mutated by authoring this change.
+Implementation merged via PR #58. C-411 verification adds isolated PostgreSQL integration tests and dedicated broker CI. Human merge of the verification PR and deployment are still required. No production state was mutated by C-411 verification work.
+
+## C-411 verification witness (ATLAS)
+
+- **Cycle:** C-411
+- **Agent:** `mobius-atlas-cursor`
+- **Runtime:** `cursor-atlas-c411-oaa-broker-ci`
+- **Verification branch:** `cursor/c411-oaa-broker-ci-verification-0e02`
+- **Follow-up to:** [PR #58](https://github.com/kaizencycle/OAA-API-Library/pull/58) (merged)
+- **Unit tests:** 16 passed (`tests/test_jobs_broker.py`, `tests/test_sentinel_auth.py`)
+- **PostgreSQL integration tests:** 15 passed (`tests/test_jobs_broker_postgres_integration.py`)
+- **Total broker verification:** 31 passed
+- **Commands executed locally (isolated PostgreSQL):**
+
+```bash
+python3 -m compileall -q app/jobs app/main.py
+pytest -q tests/test_jobs_broker.py tests/test_sentinel_auth.py
+pytest -q tests/test_jobs_broker_postgres_integration.py
+git diff --check
+```
+
+- **CI workflow:** `.github/workflows/oaa-atomic-job-broker.yml` — job **OAA Atomic Job Broker Tests**
+- **PostgreSQL isolation:** GitHub Actions `postgres:16` service; `DATABASE_URL=postgresql://oaa_test:oaa_test_password@localhost:5432/oaa_job_broker_test` (test fixtures only)
+- **PostgreSQL version (CI witness):** PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2)
+- **Production access:** false — tests refuse non-localhost `DATABASE_URL`
+- **Workflow run:** https://github.com/kaizencycle/OAA-API-Library/actions/runs/32609978549
+- **Final commit SHA:** `25a68b0f91418dd883ab83c0ec03263d0a2da860`
 
 ## Intent
 
@@ -20,10 +46,13 @@ issued_at: 2026-08-22T12:45:00Z
 expires_at: 2026-11-20T12:45:00Z
 justification: |
   VALUES INVOKED: integrity, transparency, custodianship, safety
-  REASONING: Homeroom needs an atomic assignment lease authority so autonomous runtimes cannot unknowingly claim the same job.
+  REASONING: Homeroom needs an atomic assignment lease authority so autonomous runtimes cannot unknowingly claim the same job. C-411 adds real PostgreSQL integration tests and dedicated broker CI to prove exactly-one-claim, request-id idempotency, and fail-closed store behavior before deployment.
   ANCHORS:
     - app/jobs/store.py
+    - app/jobs/router.py
     - tests/test_jobs_broker.py
+    - tests/test_jobs_broker_postgres_integration.py
+    - .github/workflows/oaa-atomic-job-broker.yml
     - docs/epicon/cycles/C-410/PHASE2_ATOMIC_JOB_BROKER.md
     - mobius.yaml
   BOUNDARIES: Assignment only. No execution authority, production mutation, GI, MIC, seal, Track R apply, or autonomous merge.
@@ -80,6 +109,7 @@ After a successful broker transition, an integration worker may update Notion us
 1. Configure a unique `*_HMAC_KEY` for each allowed runtime identity.
 2. Confirm durable Postgres is attached through `DATABASE_URL`.
 3. Run `pytest -q tests/test_jobs_broker.py tests/test_sentinel_auth.py`.
-4. Deploy only after human merge.
-5. Exercise a two-client collision canary: exactly one claim returns 200 and the other returns 409.
-6. Do not enable autonomous execution from lease state.
+4. Run `pytest -q tests/test_jobs_broker_postgres_integration.py` against isolated PostgreSQL (see broker CI workflow).
+5. Deploy only after human merge.
+6. Exercise a two-client collision canary: exactly one claim returns 200 and the other returns 409.
+7. Do not enable autonomous execution from lease state.

@@ -74,6 +74,16 @@ class JobStoreUnavailable(RuntimeError):
     pass
 
 
+def _ensure_schema(conn) -> None:
+    previous_autocommit = conn.autocommit
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_SCHEMA_SQL)
+    finally:
+        conn.autocommit = previous_autocommit
+
+
 def _connect():
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url:
@@ -129,17 +139,51 @@ def _record_event(cur, lease: dict[str, Any], event_type: str, payload: dict[str
     )
 
 
+def _normalize_snapshot(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        return json.loads(raw)
+    raise TypeError("unexpected lease snapshot type")
+
+
+def _live_active_lease(cur, job_id: str) -> dict[str, Any] | None:
+    cur.execute(
+        f"""
+        SELECT {_RETURNING}
+        FROM agent_job_leases
+        WHERE job_id = %s AND state = 'active' AND lease_expires_at > NOW()
+        """,
+        (job_id,),
+    )
+    row = cur.fetchone()
+    return _row_to_lease(row) if row else None
+
+
+def _acquire_claim_locks(cur, *, job_id: str, request_id: str) -> None:
+    lock_keys = sorted(
+        [
+            f"job:{job_id}",
+            f"request:{request_id}",
+        ]
+    )
+    for lock_key in lock_keys:
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (lock_key,),
+        )
+
+
 def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     claim_id = str(uuid.uuid4())
     conn = _connect()
     try:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(_SCHEMA_SQL)
-            # Serialize identical request IDs before checking their immutable
-            # outcomes. This makes concurrent retries return the same lease.
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                (payload["request_id"],),
+            _acquire_claim_locks(
+                cur,
+                job_id=payload["job_id"],
+                request_id=payload["request_id"],
             )
             cur.execute(
                 """
@@ -166,8 +210,23 @@ def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                             "evidence_hash": existing_request[3],
                         }
                     )
+                cached = _normalize_snapshot(existing_request[4])
+                live = _live_active_lease(cur, payload["job_id"])
+                if live and live["claim_id"] != cached.get("claim_id"):
+                    raise ActiveClaimConflict(live)
+                if live is None:
+                    cur.execute(
+                        f"SELECT {_RETURNING} FROM agent_job_leases WHERE job_id = %s",
+                        (payload["job_id"],),
+                    )
+                    row = cur.fetchone()
+                    if row is not None:
+                        current = _row_to_lease(row)
+                        if current["claim_id"] == cached.get("claim_id"):
+                            conn.commit()
+                            return current
                 conn.commit()
-                return existing_request[4]
+                return cached
 
             cur.execute(
                 f"""
@@ -249,8 +308,8 @@ def claim_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 def heartbeat_job(*, agent_id: str, claim_id: str, lease_seconds: int) -> dict[str, Any]:
     conn = _connect()
     try:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(_SCHEMA_SQL)
             cur.execute(
                 f"""
                 UPDATE agent_job_leases
@@ -282,8 +341,8 @@ def heartbeat_job(*, agent_id: str, claim_id: str, lease_seconds: int) -> dict[s
 def release_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     try:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(_SCHEMA_SQL)
             cur.execute(
                 f"""
                 UPDATE agent_job_leases
@@ -312,8 +371,8 @@ def release_job(*, agent_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 def list_active_jobs(job_id: str | None = None) -> list[dict[str, Any]]:
     conn = _connect()
     try:
+        _ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(_SCHEMA_SQL)
             query = f"SELECT {_RETURNING} FROM agent_job_leases WHERE state = 'active' AND lease_expires_at > NOW()"
             params: tuple[Any, ...] = ()
             if job_id:
